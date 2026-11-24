@@ -1,0 +1,11 @@
+<dialog id="trace" aria-labelledby="trace-title">
+  <div class="dialog-head">
+    <h2 id="trace-title">消息轨迹</h2>
+    <form method="dialog"><button class="quiet" aria-label="关闭消息轨迹">关闭</button></form>
+  </div>
+  <p class="muted" id="trace-meta"></p>
+  <h3>信封</h3><pre id="trace-envelope"></pre>
+  <h3>投递和尝试</h3><div id="trace-deliveries"></div>
+  <h3>处理记录</h3><ol id="trace-events" class="timeline"></ol>
+  <a id="trace-export" class="button-link">下载证据</a>
+</dialog>

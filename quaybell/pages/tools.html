@@ -1,0 +1,51 @@
+<aside class="tools" aria-label="处理中继消息">
+  <h2>操作</h2>
+  <details open data-needs-channel>
+    <summary>发布消息</summary>
+    <form id="publish" class="compact">
+      <div class="pair">
+        <label>生产者<input name="producer" value="console-publisher" required></label>
+        <label>生产键<input name="key" placeholder="sample-001" required></label>
+      </div>
+      <div class="pair">
+        <label>顺序键<input name="lane" value="coil-north" required></label>
+        <label>延迟秒数<input name="delay_seconds" type="number" min="0" max="86400" value="0" required></label>
+      </div>
+      <label>标签<textarea name="tags" rows="2">{"feed":"telemetry"}</textarea></label>
+      <label>消息载荷<textarea name="payload" rows="3">{"reading":48,"unit":"mV"}</textarea></label>
+      <div class="button-row"><button name="mode" value="preview" class="quiet">预查</button><button name="mode" value="messages">发布</button></div>
+      <output class="muted" id="publication-result" aria-live="polite"></output>
+    </form>
+  </details>
+  <details data-needs-channel>
+    <summary>领取和应答</summary>
+    <form id="claim" class="compact">
+      <div class="pair">
+        <label>工作进程<input name="worker" value="console-worker" required></label>
+        <label>数量<input name="limit" type="number" min="1" max="30" value="1" required></label>
+      </div>
+      <div class="button-row"><button>领取</button><button type="button" id="toggle-group" class="quiet">暂停取件</button></div>
+    </form>
+    <div class="leases" id="leases"></div>
+  </details>
+  <details data-needs-channel>
+    <summary>修订策略</summary>
+    <form id="revise" class="compact">
+      <div class="pair">
+        <label>租约秒数<input name="lease_seconds" type="number" min="1" max="300" required></label>
+        <label>初始退避秒数<input name="retry_seconds" type="number" min="0" max="300" required></label>
+        <label>最大尝试次数<input name="max_attempts" type="number" min="1" max="12" required></label>
+        <label>保留秒数<input name="retention_seconds" type="number" min="1" max="604800" required></label>
+      </div>
+      <button>提交新版</button>
+    </form>
+  </details>
+  <details data-needs-channel>
+    <summary>保留复核</summary>
+    <div class="compact">
+      <p class="muted">清理时会重新检查消息年龄和所有关联投递。</p>
+      <div class="button-row"><button type="button" id="retention-plan" class="quiet">查看候选</button><button type="button" id="retention-apply" class="danger" disabled>执行清理</button></div>
+      <output class="muted" id="retention-result" aria-live="polite"></output>
+    </div>
+  </details>
+</aside>

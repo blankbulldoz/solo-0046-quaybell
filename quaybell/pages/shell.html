@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quaybell · 消息中继</title>
+  <link rel="stylesheet" href="/static/base.css">
+  <script type="module" src="/static/console.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="identity"><span class="brand">QB</span><div>Quaybell<span class="subbrand">消息中继</span></div></div>
+    <div class="top-actions">
+      <span id="observed" class="muted"></span>
+      <button type="button" id="refresh" class="quiet">刷新状态</button>
+    </div>
+  </header>
+  <main class="layout">
+    $channels
+    $queue
+    $tools
+  </main>
+  $trace
+  <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+  <noscript><p class="notice">操作台需要启用 JavaScript。应用仍可使用 JSON 接口。</p></noscript>
+</body>
+</html>

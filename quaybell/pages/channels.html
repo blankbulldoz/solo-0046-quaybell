@@ -1,0 +1,25 @@
+<aside class="rail" aria-label="频道和消费组">
+  <div class="rail-section">
+    <h2>频道</h2>
+    <nav id="channels" class="channel-list" aria-label="频道"></nav>
+    <details>
+      <summary>新建频道</summary>
+      <form id="create-channel" class="compact">
+        <label>频道名<input name="name" required maxlength="48" pattern="[a-z][a-z0-9-]*" placeholder="signal-weir"></label>
+        <button>建立</button>
+      </form>
+    </details>
+  </div>
+  <div class="rail-section">
+    <h2>消费组</h2>
+    <div id="groups" class="group-list"></div>
+    <details data-needs-channel>
+      <summary>添加消费组</summary>
+      <form id="create-group" class="compact">
+        <label>组名<input name="name" required maxlength="48" pattern="[a-z][a-z0-9-]*" placeholder="drift-keeper"></label>
+        <label>匹配标签<textarea name="tags" rows="2" placeholder='{"feed":"telemetry"}'>{}</textarea></label>
+        <button>添加</button>
+      </form>
+    </details>
+  </div>
+</aside>

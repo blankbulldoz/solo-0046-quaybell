@@ -1,0 +1,28 @@
+<section class="workspace" aria-labelledby="channel-title">
+  <header class="workspace-head">
+    <div><p class="eyebrow">中继 / 频道</p><h1 id="channel-title">选择频道</h1><span class="muted" id="policy-version"></span></div>
+    <button type="button" class="quiet" id="recover" data-needs-channel>回收过期租约</button>
+  </header>
+  <div class="stats" id="stats" aria-label="投递分类计数"></div>
+  <section class="table-section">
+    <div class="section-head"><h2>消费组队列</h2><span class="muted" id="queue-group"></span></div>
+    <div class="scroll"><table>
+      <thead><tr><th scope="col">投递</th><th scope="col">顺序键</th><th scope="col">当前状态</th><th scope="col">队首</th><th scope="col">最早就绪</th></tr></thead>
+      <tbody id="queue-rows"></tbody>
+    </table></div>
+  </section>
+  <section class="table-section">
+    <div class="section-head"><h2>近期消息</h2><span class="muted" id="message-total"></span></div>
+    <div class="scroll"><table>
+      <thead><tr><th scope="col">消息</th><th scope="col">生产者</th><th scope="col">生产键</th><th scope="col">策略</th><th scope="col">发布时间</th></tr></thead>
+      <tbody id="message-rows"></tbody>
+    </table></div>
+  </section>
+  <section class="table-section">
+    <div class="section-head"><h2>死信</h2><span class="muted" id="dead-total"></span></div>
+    <div class="scroll"><table>
+      <thead><tr><th scope="col">原投递</th><th scope="col">消费组</th><th scope="col">最后原因</th><th scope="col">重投</th></tr></thead>
+      <tbody id="dead-rows"></tbody>
+    </table></div>
+  </section>
+</section>

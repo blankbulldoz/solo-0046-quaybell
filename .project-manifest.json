@@ -1,0 +1,445 @@
+{
+  "project_shape": "fullstack",
+  "modules": [
+    {
+      "id": "catalog",
+      "path": "quaybell/catalog.py",
+      "responsibility": "频道建立和策略修订入口"
+    },
+    {
+      "id": "policy",
+      "path": "quaybell/policy.py",
+      "responsibility": "版本、数值边界和退避"
+    },
+    {
+      "id": "subscriptions",
+      "path": "quaybell/subscriptions.py",
+      "responsibility": "标签订阅和取件开关"
+    },
+    {
+      "id": "routing",
+      "path": "quaybell/routing.py",
+      "responsibility": "预查和发布共用的精确匹配"
+    },
+    {
+      "id": "envelope",
+      "path": "quaybell/envelope.py",
+      "responsibility": "稳定信封和标签校验"
+    },
+    {
+      "id": "publication",
+      "path": "quaybell/publication.py",
+      "responsibility": "生产身份、回执和分发创建"
+    },
+    {
+      "id": "journal",
+      "path": "quaybell/journal.py",
+      "responsibility": "处置顺序和消息级事件"
+    },
+    {
+      "id": "delivery",
+      "path": "quaybell/delivery.py",
+      "responsibility": "投递状态和原投递关联"
+    },
+    {
+      "id": "inspection",
+      "path": "quaybell/inspection.py",
+      "responsibility": "原消息到尝试的追溯"
+    },
+    {
+      "id": "claims",
+      "path": "quaybell/claims.py",
+      "responsibility": "按组取件和发放租约"
+    },
+    {
+      "id": "eligibility",
+      "path": "quaybell/eligibility.py",
+      "responsibility": "同键队首和原因分类"
+    },
+    {
+      "id": "expiry",
+      "path": "quaybell/expiry.py",
+      "responsibility": "跨组或组内的有界回收"
+    },
+    {
+      "id": "attempts",
+      "path": "quaybell/attempts.py",
+      "responsibility": "凭据摘要和尝试历史"
+    },
+    {
+      "id": "disposition",
+      "path": "quaybell/disposition.py",
+      "responsibility": "带凭据的客户应答和应答重试"
+    },
+    {
+      "id": "outcomes",
+      "path": "quaybell/outcomes.py",
+      "responsibility": "由尝试结果计算终态或下一次就绪"
+    },
+    {
+      "id": "deadletters",
+      "path": "quaybell/deadletters.py",
+      "responsibility": "死信和最后尝试"
+    },
+    {
+      "id": "redrive",
+      "path": "quaybell/redrive.py",
+      "responsibility": "追加同组后继投递"
+    },
+    {
+      "id": "overview",
+      "path": "quaybell/overview.py",
+      "responsibility": "组状态、队列和近期消息快照"
+    },
+    {
+      "id": "retention",
+      "path": "quaybell/retention.py",
+      "responsibility": "基于消息年龄和派生投递的清理"
+    },
+    {
+      "id": "evidence",
+      "path": "quaybell/evidence.py",
+      "responsibility": "可下载快照及可复算摘要"
+    },
+    {
+      "id": "codec",
+      "path": "quaybell/codec.py",
+      "responsibility": "规范 JSON 与摘要"
+    },
+    {
+      "id": "persistence",
+      "path": "quaybell/persistence.py",
+      "responsibility": "SQLite 连接和读写事务"
+    },
+    {
+      "id": "api_reads",
+      "path": "quaybell/api_reads.py",
+      "responsibility": "JSON 读取和下载"
+    },
+    {
+      "id": "api_writes",
+      "path": "quaybell/api_writes.py",
+      "responsibility": "JSON 处置调度"
+    }
+  ],
+  "workflows": [
+    {
+      "id": "channel",
+      "name": "建立频道与初始策略",
+      "entry": "POST /v1/channels",
+      "success": "返回频道和初始策略",
+      "failure": "同名频道返回 409",
+      "verification": "python3 -m examples.walkthrough channel",
+      "steps": [
+        "通过 POST /v1/channels 发起操作",
+        "节流与保留策略以频道为单位，第一版和频道同时出现",
+        "返回频道和初始策略"
+      ],
+      "module_ids": [
+        "catalog",
+        "policy",
+        "journal"
+      ]
+    },
+    {
+      "id": "revision",
+      "name": "修订投递策略",
+      "entry": "POST /v1/channels/{channel}/policy",
+      "success": "旧投递沿用四秒租约，新投递使用十二秒",
+      "failure": "持有旧版号重复修订返回 409",
+      "verification": "python3 -m examples.walkthrough revision",
+      "steps": [
+        "通过 POST /v1/channels/{channel}/policy 发起操作",
+        "新消息使用修订版，旧投递的租约与重试仍按原版",
+        "旧投递沿用四秒租约，新投递使用十二秒"
+      ],
+      "module_ids": [
+        "policy",
+        "catalog",
+        "journal"
+      ]
+    },
+    {
+      "id": "group",
+      "name": "订阅频道配置精确标签",
+      "entry": "POST /v1/channels/{channel}/groups",
+      "success": "匹配的后续发布生成本组投递",
+      "failure": "订阅之前的消息和标签不匹配的消息没有本组分发",
+      "verification": "python3 -m examples.walkthrough group",
+      "steps": [
+        "通过 POST /v1/channels/{channel}/groups 发起操作",
+        "订阅与生产串行提交，后续出版才参与匹配",
+        "匹配的后续发布生成本组投递"
+      ],
+      "module_ids": [
+        "subscriptions",
+        "catalog",
+        "routing",
+        "journal"
+      ]
+    },
+    {
+      "id": "preview",
+      "name": "查看候选消息的当前匹配",
+      "entry": "POST /v1/channels/{channel}/preview",
+      "success": "返回匹配的消费组，消息列表仍为空",
+      "failure": "无法解析的标签返回 400",
+      "verification": "python3 -m examples.walkthrough preview",
+      "steps": [
+        "通过 POST /v1/channels/{channel}/preview 发起操作",
+        "预查无副作用，发布时按当下订阅重新判断",
+        "返回匹配的消费组，消息列表仍为空"
+      ],
+      "module_ids": [
+        "routing",
+        "subscriptions",
+        "envelope"
+      ]
+    },
+    {
+      "id": "publish",
+      "name": "去重发布和持久分发",
+      "entry": "POST /v1/channels/{channel}/messages",
+      "success": "同信封返回原 ID 和最初的分发集合",
+      "failure": "同一生产键被另一信封使用时返回 409",
+      "verification": "python3 -m examples.walkthrough publish",
+      "steps": [
+        "通过 POST /v1/channels/{channel}/messages 发起操作",
+        "重复请求复用原分发，键有冲突时拒绝",
+        "同信封返回原 ID 和最初的分发集合"
+      ],
+      "module_ids": [
+        "publication",
+        "envelope",
+        "routing",
+        "subscriptions",
+        "delivery"
+      ]
+    },
+    {
+      "id": "inspect",
+      "name": "追踪消息、投递和尝试",
+      "entry": "GET /v1/messages/{id}",
+      "success": "同步看到发布、领取、确认和尝试摘要",
+      "failure": "不存在的消息返回 404",
+      "verification": "python3 -m examples.walkthrough inspect",
+      "steps": [
+        "通过 GET /v1/messages/{id} 发起操作",
+        "同一读快照给出消息到投递的证据",
+        "同步看到发布、领取、确认和尝试摘要"
+      ],
+      "module_ids": [
+        "inspection",
+        "journal",
+        "delivery"
+      ]
+    },
+    {
+      "id": "pause",
+      "name": "启停消费组取件",
+      "entry": "POST /v1/channels/{channel}/groups/{group}/pause",
+      "success": "已存在的租约可以确认，恢复后再次取件",
+      "failure": "暂停期间新的领取为空",
+      "verification": "python3 -m examples.walkthrough pause",
+      "steps": [
+        "通过 POST /v1/channels/{channel}/groups/{group}/pause 发起操作",
+        "暂停只停止新租约，已有租约仍可处置",
+        "已存在的租约可以确认，恢复后再次取件"
+      ],
+      "module_ids": [
+        "subscriptions",
+        "eligibility",
+        "journal"
+      ]
+    },
+    {
+      "id": "claim",
+      "name": "按顺序键领取带租约的消息",
+      "entry": "POST /v1/channels/{channel}/groups/{group}/claim",
+      "success": "其他键独立取件且同键在队首处置后推进",
+      "failure": "后继已就绪也不能超越延迟队首",
+      "verification": "python3 -m examples.walkthrough claim",
+      "steps": [
+        "通过 POST /v1/channels/{channel}/groups/{group}/claim 发起操作",
+        "每个顺序键只有第一条未处置消息有权领取",
+        "其他键独立取件且同键在队首处置后推进"
+      ],
+      "module_ids": [
+        "claims",
+        "eligibility",
+        "expiry",
+        "policy",
+        "attempts"
+      ]
+    },
+    {
+      "id": "ack",
+      "name": "凭租约确认处理结果",
+      "entry": "POST /v1/deliveries/{id}/ack",
+      "success": "有效凭据确认并支持同一确认回执重试",
+      "failure": "无效凭据返回 409",
+      "verification": "python3 -m examples.walkthrough ack",
+      "steps": [
+        "通过 POST /v1/deliveries/{id}/ack 发起操作",
+        "旧凭据永远不能确认新尝试，当前成功重试可复用收据",
+        "有效凭据确认并支持同一确认回执重试"
+      ],
+      "module_ids": [
+        "disposition",
+        "attempts",
+        "delivery",
+        "journal"
+      ]
+    },
+    {
+      "id": "retry",
+      "name": "签收失败并按旧版策略推迟",
+      "entry": "POST /v1/deliveries/{id}/nack",
+      "success": "退避结束后产生新凭据，失败预算用尽时进死信",
+      "failure": "退避中无法取件且旧凭据不能确认新尝试",
+      "verification": "python3 -m examples.walkthrough retry",
+      "steps": [
+        "通过 POST /v1/deliveries/{id}/nack 发起操作",
+        "失败尝试和下一次可领时间同时提交",
+        "退避结束后产生新凭据，失败预算用尽时进死信"
+      ],
+      "module_ids": [
+        "disposition",
+        "outcomes",
+        "policy",
+        "attempts"
+      ]
+    },
+    {
+      "id": "sweep",
+      "name": "回收超时租约",
+      "entry": "POST /v1/sweep",
+      "success": "按截止时间而非回收时间计算重试",
+      "failure": "恰好到期的旧凭据确认返回 409",
+      "verification": "python3 -m examples.walkthrough sweep",
+      "steps": [
+        "通过 POST /v1/sweep 发起操作",
+        "自然超时进入同一退避规则，回收依据原截止时间",
+        "按截止时间而非回收时间计算重试"
+      ],
+      "module_ids": [
+        "expiry",
+        "outcomes",
+        "attempts",
+        "delivery"
+      ]
+    },
+    {
+      "id": "dead",
+      "name": "查看失败隔离和尝试历史",
+      "entry": "GET /v1/channels/{channel}/dead",
+      "success": "展示本组死信、最后失败原因及尝试",
+      "failure": "未失败的投递不可重投",
+      "verification": "python3 -m examples.walkthrough dead",
+      "steps": [
+        "通过 GET /v1/channels/{channel}/dead 发起操作",
+        "原投递保留终态和最后原因，其他组继续各自工作",
+        "展示本组死信、最后失败原因及尝试"
+      ],
+      "module_ids": [
+        "deadletters",
+        "inspection",
+        "attempts"
+      ]
+    },
+    {
+      "id": "redrive",
+      "name": "按死信原消息追加新投递",
+      "entry": "POST /v1/deliveries/{id}/redrive",
+      "success": "可领取的新投递沿用本组顺序键并绑定新策略",
+      "failure": "重复重投返回同一个后继",
+      "verification": "python3 -m examples.walkthrough redrive",
+      "steps": [
+        "通过 POST /v1/deliveries/{id}/redrive 发起操作",
+        "原死信可审核，重投使用当前策略且重复操作返回同一记录",
+        "可领取的新投递沿用本组顺序键并绑定新策略"
+      ],
+      "module_ids": [
+        "redrive",
+        "deadletters",
+        "delivery",
+        "policy",
+        "journal"
+      ]
+    },
+    {
+      "id": "board",
+      "name": "定位积压原因",
+      "entry": "GET /v1/channels/{channel}",
+      "success": "同一快照区分延迟、可领及顺序等待",
+      "failure": "暂停导致队首不可领取，后续依然由队首阻挡",
+      "verification": "python3 -m examples.walkthrough board",
+      "steps": [
+        "通过 GET /v1/channels/{channel} 发起操作",
+        "在单个观察时间识别延迟、阻挡、暂停或超时",
+        "同一快照区分延迟、可领及顺序等待"
+      ],
+      "module_ids": [
+        "overview",
+        "eligibility",
+        "subscriptions",
+        "inspection"
+      ]
+    },
+    {
+      "id": "retention",
+      "name": "复核并清理已过保留期的消息",
+      "entry": "GET / POST /v1/channels/{channel}/retention",
+      "success": "删除符合条件的消息与其派生分发",
+      "failure": "有活动尝试的同龄消息仍保留",
+      "verification": "python3 -m examples.walkthrough retention",
+      "steps": [
+        "通过 GET / POST /v1/channels/{channel}/retention 发起操作",
+        "仍有未处置分发的消息与对应事实整组保留",
+        "删除符合条件的消息与其派生分发"
+      ],
+      "module_ids": [
+        "retention",
+        "inspection",
+        "journal",
+        "redrive"
+      ]
+    },
+    {
+      "id": "export",
+      "name": "导出消息处置证据",
+      "entry": "GET /v1/messages/{id}/evidence",
+      "success": "重算摘要与导出内容一致",
+      "failure": "不同消息号无法读到既有证据",
+      "verification": "python3 -m examples.walkthrough export",
+      "steps": [
+        "通过 GET /v1/messages/{id}/evidence 发起操作",
+        "导出和页面状态来自一致快照，凭据不进入导出",
+        "重算摘要与导出内容一致"
+      ],
+      "module_ids": [
+        "evidence",
+        "inspection",
+        "codec"
+      ]
+    }
+  ],
+  "complexity": {
+    "mechanisms": [
+      "resource_lifecycle",
+      "versioning_audit",
+      "policy_rules",
+      "snapshot_consistency",
+      "idempotency",
+      "lineage",
+      "state_machine",
+      "ranking_reorder",
+      "concurrency",
+      "time_semantics",
+      "recovery_rollback",
+      "error_propagation",
+      "delete_removal",
+      "export_freeze"
+    ]
+  }
+}

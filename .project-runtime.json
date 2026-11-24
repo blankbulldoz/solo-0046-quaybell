@@ -1,0 +1,78 @@
+{
+  "language": "Python 3.11+ / HTML / CSS / JavaScript",
+  "project_shape": "fullstack",
+  "source_extensions": [
+    ".py",
+    ".html",
+    ".css",
+    ".js"
+  ],
+  "testing": "deferred",
+  "build_command": "python3 -m compileall -q quaybell examples",
+  "workflow_checks": [
+    {
+      "workflow_id": "channel",
+      "command": "python3 -m examples.walkthrough channel"
+    },
+    {
+      "workflow_id": "revision",
+      "command": "python3 -m examples.walkthrough revision"
+    },
+    {
+      "workflow_id": "group",
+      "command": "python3 -m examples.walkthrough group"
+    },
+    {
+      "workflow_id": "preview",
+      "command": "python3 -m examples.walkthrough preview"
+    },
+    {
+      "workflow_id": "publish",
+      "command": "python3 -m examples.walkthrough publish"
+    },
+    {
+      "workflow_id": "inspect",
+      "command": "python3 -m examples.walkthrough inspect"
+    },
+    {
+      "workflow_id": "pause",
+      "command": "python3 -m examples.walkthrough pause"
+    },
+    {
+      "workflow_id": "claim",
+      "command": "python3 -m examples.walkthrough claim"
+    },
+    {
+      "workflow_id": "ack",
+      "command": "python3 -m examples.walkthrough ack"
+    },
+    {
+      "workflow_id": "retry",
+      "command": "python3 -m examples.walkthrough retry"
+    },
+    {
+      "workflow_id": "sweep",
+      "command": "python3 -m examples.walkthrough sweep"
+    },
+    {
+      "workflow_id": "dead",
+      "command": "python3 -m examples.walkthrough dead"
+    },
+    {
+      "workflow_id": "redrive",
+      "command": "python3 -m examples.walkthrough redrive"
+    },
+    {
+      "workflow_id": "board",
+      "command": "python3 -m examples.walkthrough board"
+    },
+    {
+      "workflow_id": "retention",
+      "command": "python3 -m examples.walkthrough retention"
+    },
+    {
+      "workflow_id": "export",
+      "command": "python3 -m examples.walkthrough export"
+    }
+  ]
+}
