@@ -22,7 +22,14 @@ def get(db, channel, group):
 
 def create(db, channel, raw, now):
     catalog.get(db, channel)
-    inputs.require(raw, ('name',), ('tags',))
+    inputs.require(raw, ('name',), ('tags', 'mode', 'merge_mode', 'confluence', 'merge',
+                                    'enabled', 'sources', 'source_order',
+                                    'config', 'settings', 'options',
+                                    'time_budget_seconds', 'budget_seconds',
+                                    'gap_budget_seconds', 'wait_budget_seconds',
+                                    'time_budget', 'budget', 'timeout_seconds',
+                                    'start', 'initial_sequence', 'anchor_on_first',
+                                    'block_other_sources'))
     group = inputs.name(raw['name'], '消费组')
     tags = labels(raw.get('tags', {}))
     if any(item['name'] == group for item in for_channel(db, channel)):
@@ -30,7 +37,24 @@ def create(db, channel, raw, now):
     db.execute('INSERT INTO subscriptions(channel,name,tags,created) VALUES (?,?,?,?)',
                (channel, group, pack(tags), now))
     journal.append(db, channel, now, 'subscribed', {'group': group, 'tags': tags})
-    return get(db, channel, group)
+    record = get(db, channel, group)
+    mode = raw.get('mode') or raw.get('merge_mode')
+    merge_requested = mode in ('confluence', 'merge', 'sequence', 'sequence_merge',
+                               'source_sequence') or raw.get('confluence') is not None or raw.get('merge') is not None or any(
+        key in raw for key in ('time_budget_seconds', 'budget_seconds', 'gap_budget_seconds',
+                               'wait_budget_seconds', 'time_budget', 'budget', 'gap_timeout',
+                               'gap_timeout_seconds', 'sources', 'source_order'))
+    if merge_requested:
+        from . import confluence_service
+        config_raw = dict(raw)
+        for nested_key in ('confluence', 'merge', 'config', 'settings', 'options'):
+            nested = raw.get(nested_key)
+            if isinstance(nested, dict):
+                for key, value in nested.items():
+                    config_raw.setdefault(key, value)
+        record = record | {'confluence': confluence_service.configure(
+            db, channel, group, config_raw, now)}
+    return record
 
 
 def pause(db, channel, group, raw, now):

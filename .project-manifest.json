@@ -52,6 +52,16 @@
       "responsibility": "按组取件和发放租约"
     },
     {
+      "id": "confluence",
+      "path": "quaybell/confluence.py",
+      "responsibility": "多来源序号缺口、时间预算、重复与晚到状态机"
+    },
+    {
+      "id": "confluence_service",
+      "path": "quaybell/confluence_service.py",
+      "responsibility": "消费组合流模式的持久化和 HTTP 编排"
+    },
+    {
       "id": "eligibility",
       "path": "quaybell/eligibility.py",
       "responsibility": "同键队首和原因分类"
@@ -270,6 +280,27 @@
         "expiry",
         "policy",
         "attempts"
+      ]
+    },
+    {
+      "id": "confluence",
+      "name": "多采集链缺号合流与超预算晚到追查",
+      "entry": "POST /v1/channels/{channel}/groups/{group}/confluence/records",
+      "success": "按来源报告缺号，其他来源继续释放，超预算后跳过并可追查晚到项",
+      "failure": "同源同号重复返回原记录，异源同号不判重",
+      "verification": "python3 -m examples.walkthrough confluence",
+      "steps": [
+        "开启 sequence 合流模式并约定 time_budget_seconds",
+        "提交两条来源的连续/跳号序列",
+        "检查各来源 gaps 与已释放输出",
+        "推进预算后提交晚到缺号并查询 trace_url"
+      ],
+      "module_ids": [
+        "confluence",
+        "confluence_service",
+        "routes",
+        "api_writes",
+        "api_reads"
       ]
     },
     {

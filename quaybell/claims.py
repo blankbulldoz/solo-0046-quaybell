@@ -1,4 +1,4 @@
-from . import attempts, delivery, eligibility, expiry, inputs, journal, policy, publication, subscriptions
+from . import attempts, confluence_service, delivery, eligibility, expiry, inputs, journal, policy, publication, subscriptions
 
 
 def claim(db, channel, group, raw, now):
@@ -9,6 +9,10 @@ def claim(db, channel, group, raw, now):
     if sub['paused']:
         return {'paused': True, 'items': []}
     expiry.reap(db, now, 100, sub['id'])
+    if confluence_service.is_enabled(db, sub['id']):
+        # Quaybell has no background scheduler; claims lazily cross an agreed
+        # confluence budget in the same write transaction.
+        confluence_service.advance(db, channel, sub['name'], {}, now)
     results = []
     for item in eligibility.ready(db, sub['id'], now, limit):
         rule = policy.read(db, channel, item['policy'])

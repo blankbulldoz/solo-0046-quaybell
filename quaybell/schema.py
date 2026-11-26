@@ -78,4 +78,38 @@ CREATE INDEX IF NOT EXISTS attempt_deadline ON attempts(expires,id) WHERE outcom
 CREATE UNIQUE INDEX IF NOT EXISTS one_open_attempt ON attempts(delivery_id) WHERE outcome='open';
 CREATE INDEX IF NOT EXISTS message_channel ON messages(channel,published,id);
 CREATE INDEX IF NOT EXISTS journal_message ON journal(message_id,id);
+CREATE TABLE IF NOT EXISTS confluence_states (
+  subscription_id INTEGER PRIMARY KEY REFERENCES subscriptions(id) ON DELETE CASCADE,
+  channel TEXT NOT NULL,
+  group_name TEXT NOT NULL,
+  body TEXT NOT NULL,
+  created REAL NOT NULL,
+  updated REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS confluence_receipts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  subscription_id INTEGER NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
+  local_id INTEGER NOT NULL,
+  source TEXT NOT NULL,
+  sequence INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  traceable INTEGER NOT NULL DEFAULT 0 CHECK(traceable IN (0,1)),
+  body TEXT NOT NULL,
+  updated REAL NOT NULL,
+  UNIQUE(subscription_id, source, sequence),
+  UNIQUE(subscription_id, local_id)
+);
+CREATE INDEX IF NOT EXISTS confluence_receipt_trace ON confluence_receipts(traceable,id);
+CREATE TABLE IF NOT EXISTS confluence_delivery_links (
+  delivery_id INTEGER PRIMARY KEY REFERENCES deliveries(id) ON DELETE CASCADE,
+  subscription_id INTEGER NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
+  source TEXT NOT NULL,
+  sequence INTEGER NOT NULL,
+  local_id INTEGER,
+  gate_state TEXT NOT NULL CHECK(gate_state IN ('released','buffered','late','duplicate')),
+  duplicate_of_delivery_id INTEGER REFERENCES deliveries(id),
+  created REAL NOT NULL,
+  updated REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS confluence_link_source ON confluence_delivery_links(subscription_id,source,sequence);
 '''

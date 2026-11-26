@@ -207,9 +207,69 @@ def export(client):
     return {'format': record['format'], 'sha256': digest}
 
 
+def confluence(client):
+    client.channel()
+    client.subscribe()
+    merge_group = GROUP + '/confluence'
+    client.request(merge_group, {
+        'mode': 'sequence',
+        'sources': ['chain-a', 'chain-b'],
+        'time_budget_seconds': 5,
+    })
+
+    def put(source, sequence, payload=None):
+        return client.request(merge_group + '/records', {
+            'source': source,
+            'sequence': sequence,
+            'payload': payload or {'seq': sequence},
+        })
+
+    put('chain-a', 1, {'item': 'a1'})
+    put('chain-b', 1, {'item': 'b1'})
+    put('chain-a', 3, {'item': 'a3'})  # chain-a is now missing #2
+    for sequence in (2, 3, 4):
+        put('chain-b', sequence, {'item': f'b{sequence}'})
+
+    before = client.request(merge_group)
+    assert before['gaps'] == {'chain-a': [2], 'chain-b': []}
+    assert [(row['source'], row['sequence']) for row in before['released']] == [
+        ('chain-a', 1), ('chain-b', 1), ('chain-b', 2), ('chain-b', 3), ('chain-b', 4),
+    ]
+
+    client.tick(5)
+    advanced = client.request(merge_group + '/advance', {})
+    assert [(row['source'], row['sequence']) for row in advanced['released']] == [('chain-a', 3)]
+    assert [gap['sequence'] for gap in advanced['skipped_gaps']] == [2]
+
+    late = put('chain-a', 2, {'item': 'a2-late'})
+    assert late['status'] == 'late' and late['traceable'] is True
+    trace = client.request(late['trace_url'].removeprefix('/v1'))
+    assert trace['source'] == 'chain-a' and trace['sequence'] == 2
+    assert trace['record']['state'] == 'late'
+    assert trace['incidents'][0]['state'] == 'traceable'
+
+    duplicate = put('chain-a', 1, {'item': 'a1'})
+    assert duplicate['duplicate'] is True and duplicate['id'] == 1
+    snapshot = client.request(merge_group)
+    a1 = next(row for row in snapshot['records']
+              if row['source'] == 'chain-a' and row['sequence'] == 1)
+    b1 = next(row for row in snapshot['records']
+              if row['source'] == 'chain-b' and row['sequence'] == 1)
+    assert a1['id'] != b1['id']
+    assert b1['id'] in a1['peer_record_ids'] and a1['id'] in b1['peer_record_ids']
+    assert snapshot['counts']['late'] == 1 and snapshot['counts']['duplicates'] == 1
+    return {
+        'gaps_before_budget': before['gaps'],
+        'released_after_budget': [(r['source'], r['sequence']) for r in advanced['released']],
+        'late_trace_url': late['trace_url'],
+        'duplicate_id': duplicate['id'],
+        'same_sequence_ids': {'chain-a': a1['id'], 'chain-b': b1['id']},
+    }
+
+
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             redrive=redrive, board=board, retention=retention, export=export, confluence=confluence)
 
 
 def main():
