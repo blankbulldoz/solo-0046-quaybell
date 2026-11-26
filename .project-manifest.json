@@ -102,6 +102,11 @@
       "responsibility": "可下载快照及可复算摘要"
     },
     {
+      "id": "archive",
+      "path": "quaybell/archive.py",
+      "responsibility": "补订交接、证据核验、删除对账与缺口裁决"
+    },
+    {
       "id": "codec",
       "path": "quaybell/codec.py",
       "responsibility": "规范 JSON 与摘要"
@@ -422,6 +427,28 @@
         "inspection",
         "codec"
       ]
+    },
+    {
+      "id": "backfill",
+      "name": "补订交接并对窗口内删除对账",
+      "entry": "POST /v1/channels/{channel}/groups/{group}/backfills",
+      "success": "幸存消息前插补订，有据删除核销屏障，未归类缺口裁决后封口且热键后继不越序",
+      "failure": "摘要不符的证据包返回 409，未裁决缺口持续阻挡该顺序键",
+      "verification": "python3 -m examples.walkthrough backfill",
+      "steps": [
+        "通过 POST /v1/channels/{channel}/groups/{group}/backfills 发起可重试交接",
+        "按标签和时间窗对幸存消息、清理记录和证据包对账并建立屏障",
+        "冷键独立领取，热键缺口处理完后按补订前序到新发布的顺序继续"
+      ],
+      "module_ids": [
+        "archive",
+        "retention",
+        "eligibility",
+        "delivery",
+        "evidence",
+        "journal",
+        "persistence"
+      ]
     }
   ],
   "complexity": {
@@ -439,7 +466,10 @@
       "recovery_rollback",
       "error_propagation",
       "delete_removal",
-      "export_freeze"
+      "export_freeze",
+      "gap_reconciliation",
+      "schema_migration",
+      "evidence_verification"
     ]
   }
 }

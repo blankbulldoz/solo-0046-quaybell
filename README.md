@@ -36,8 +36,24 @@ python3 -m quaybell --demo
 | `/messages/{id}` | GET | 信封、分发、尝试、消息级处理记录 |
 | `/messages/{id}/evidence` | GET | `quaybell-trace/1` JSON 下载，摘要针对除 `sha256` 之外的规范化内容 |
 | `/channels/{channel}/retention` | GET / POST | 候选复核，或以 `{}` / `limit` 清理实际合格项 |
+| `/channels/{channel}/backfills` | GET | 列出本频道补订交接单及未决条目数 |
+| `/channels/{channel}/groups/{group}/backfills` | POST | 按 `name`、时间窗和标签发起可重试的补订交接与对账 |
+| `/channels/{channel}/backfills/{id}` | GET | 交接单对账结果、缺口条目和封口状态 |
+| `/channels/{channel}/evidence` | POST | 上交 `quaybell-trace/1` 证据包，校验摘要后入库 |
+| `/channels/{channel}/backfills/{id}/evidence` | POST | 上交证据包并直接核销同编号缺口 |
+| `/channels/{channel}/backfills/{id}/resolve` | POST | 对未归类缺口做 `accepted` / `skipped` 人工裁决 |
 
 默认策略是 `lease_seconds=24`、`retry_seconds=3`、`max_attempts=3`、`retention_seconds=3600`。重发原生产键时复用初始匹配结果，内容变化则返回 409。如果应用侧副作用必须去重，应按消息和消费组身份设计处理键。重投需要按其业务语义明确将后继身份识别为有意重新处理。
+
+## 补订交接与删除对账
+
+归档组可用 `POST .../groups/{group}/backfills` 按标签和时间窗补订最近一小时的消息，交接期间正常发布和领取不中断。系统只依据三类现存材料下结论：
+
+- **仍在库的原消息**：补订一条本组投递，按原始发布时间整块前插到交接期新发布之前；
+- **有据删除**：清理在删除前把顺序键、标签和信封摘要写入频道清理记录；值班员在清理前导出的证据包经 SHA-256 核验通过后，缺口记为 `recovered_evicted` 并撤除屏障；
+- **未归类删除**：只剩清理编号、拿不到原信封的删除先记 `unclassified` 并在真实顺序键上立一个不可领取的屏障投递。未人工 `resolve` 前，热键后继不能越过这个仍欠的前序；冷键（无缺口的顺序键）不被拖住，可继续领取。
+
+交接单按 `(频道, 消费组, name)` 幂等：创建响应丢失时用同一身份重发，返回同一份交接单和当前对账，不会重复建投递。证据包重发返回原记录；摘要不符返回 409。所有缺口进入终态（`delivered`、`recovered_evicted`、`accepted`、`skipped`）后交接单 `sealed=true`。投递在顺序键内改由逻辑位置 `position` 排序，使补订前序稳定先于后继。
 
 以下载荷可发布到示例频道。默认延迟为零。
 
@@ -52,6 +68,7 @@ python3 -m compileall -q quaybell examples
 python3 -m examples.walkthrough claim
 python3 -m examples.walkthrough retention
 python3 -m examples.walkthrough export
+python3 -m examples.walkthrough backfill
 ```
 
-每个工作流示例使用临时 SQLite 文件、受控时钟和本机随机端口，运行完即释放。可用 `python3 -m examples.walkthrough --help` 列出所有工作流。正式测试套件延后建设。
+每个工作流示例使用临时 SQLite 文件、受控时钟和本机随机端口，运行完即释放。可用 `python3 -m examples.walkthrough --help` 列出所有工作流。`backfill` 工作流在真实 HTTP 实例上演示两类删除（有据/未归类）、同键新发布、创建响应丢失重试，以及冷键独立、热键后继不越前序的对账与继续领取。正式测试套件延后建设。

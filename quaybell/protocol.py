@@ -4,7 +4,7 @@ from . import codec
 from .errors import RelayError
 
 JSON = 'application/json; charset=utf-8'
-MAX_REQUEST = 32768
+MAX_REQUEST = 262144
 
 
 @dataclass(frozen=True)

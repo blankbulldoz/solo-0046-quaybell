@@ -1,4 +1,4 @@
-from . import catalog, claims, disposition, expiry, inputs, publication, redrive, retention, subscriptions
+from . import archive, catalog, claims, disposition, expiry, inputs, publication, redrive, retention, subscriptions
 from .protocol import Reply
 
 
@@ -26,4 +26,12 @@ def write(db, action, args, raw, now):
         return Reply(item, 200 if item['repeated'] else 201)
     if action == 'prune':
         return Reply(retention.prune(db, *args, raw, now))
+    if action == 'open_backfill':
+        item = archive.create(db, args[0], args[1], raw, now)
+        return Reply(item, 200 if item['repeated'] else 201)
+    if action == 'intake_evidence':
+        item = archive.intake(db, args[0], raw, now)
+        return Reply(item, 200 if item['repeated'] else 201)
+    if action == 'resolve_gap':
+        return Reply(archive.resolve(db, int(args[1]), raw, now))
     raise AssertionError(action)

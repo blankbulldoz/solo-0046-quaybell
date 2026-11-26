@@ -54,6 +54,31 @@ class Session:
             data['reason'] = '下游拒绝校验帧'
         return self.request(f"/deliveries/{item['delivery_id']}/{mode}", data, expected)
 
+    def evidence(self, message_id):
+        return self.request(f"/messages/{message_id}/evidence")
+
+    def backfill(self, name, window, tags=None, expected=201, **extra):
+        data = dict(name=name, window_start=window[0], window_end=window[1],
+                    tags=tags or {'feed': 'samples'}) | extra
+        return self.request(GROUP + '/backfills', data, expected)
+
+    def handoff(self, key):
+        return self.request(f"{CHANNEL}/backfills/{key}")
+
+    def handoffs(self):
+        return self.request(CHANNEL + '/backfills')
+
+    def intake(self, pack, backfill=None, expected=201):
+        data = {'pack': pack}
+        if backfill is not None:
+            data['backfill'] = backfill
+        path = f"{CHANNEL}/backfills/{backfill}/evidence" if backfill is not None else CHANNEL + '/evidence'
+        return self.request(path, data, expected)
+
+    def resolve_gap(self, key, entry, resolution, note='值班员核对清理编号后裁决', expected=200):
+        return self.request(f"{CHANNEL}/backfills/{key}/resolve",
+                            {'entry': entry, 'resolution': resolution, 'note': note}, expected)
+
 
 def envelope(key='signal-1', lane='coil-north', **extra):
     return dict(producer='signal-source', key=key, lane=lane, payload={'value': 18},

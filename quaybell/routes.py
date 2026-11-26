@@ -9,6 +9,8 @@ PATTERNS = {
     'GET': (
         ('/v1/channels', 'channels'), (CHANNEL, 'board'), (CHANNEL + '/dead', 'dead'),
         (MESSAGE, 'trace'), (MESSAGE + '/evidence', 'export'), (CHANNEL + '/retention', 'retention'),
+        (CHANNEL + '/backfills', 'backfills'),
+        (CHANNEL + r'/backfills/([1-9][0-9]{0,17})', 'backfill'),
     ),
     'POST': (
         ('/v1/channels', 'create_channel'), (CHANNEL + '/policy', 'revision'),
@@ -16,6 +18,10 @@ PATTERNS = {
         (CHANNEL + '/preview', 'preview'), (CHANNEL + '/messages', 'publish'),
         (GROUP + '/claim', 'claim'), (DELIVERY + '/ack', 'ack'), (DELIVERY + '/nack', 'nack'),
         ('/v1/sweep', 'sweep'), (DELIVERY + '/redrive', 'redrive'), (CHANNEL + '/retention', 'prune'),
+        (GROUP + '/backfills', 'open_backfill'),
+        (CHANNEL + '/evidence', 'intake_evidence'),
+        (CHANNEL + r'/backfills/([1-9][0-9]{0,17})/evidence', 'intake_evidence'),
+        (CHANNEL + r'/backfills/([1-9][0-9]{0,17})/resolve', 'resolve_gap'),
     ),
 }
 ROUTES = {method: [(re.compile(pattern), action) for pattern, action in patterns]

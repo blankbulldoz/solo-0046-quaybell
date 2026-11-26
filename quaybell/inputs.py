@@ -24,6 +24,12 @@ def integer(value, low, high, label):
     return value
 
 
+def epoch(value, low, high, label):
+    if type(value) not in (int, float) or not low <= value <= high:
+        raise invalid(f'{label}须为 {low}～{high} 的 Unix 秒')
+    return value
+
+
 def boolean(value, label):
     if type(value) is not bool:
         raise invalid(f'{label}须为布尔值')

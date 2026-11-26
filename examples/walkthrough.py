@@ -207,9 +207,96 @@ def export(client):
     return {'format': record['format'], 'sha256': digest}
 
 
+def backfill(client):
+    # 归档组订阅带标签的消息；保留期很短，便于演示一小时窗口内的清理。
+    client.channel(POLICY | {'retention_seconds': 6, 'max_attempts': 1})
+    client.subscribe(tags={'feed': 'samples'})
+    start = client.clock[0]
+
+    # 热键 coil-north：两条历史将被清理，前者清理前导出证据（有据删除），
+    # 后者清理后只剩编号（未归类删除）；再加一条延迟、清理时仍未就绪而幸存的消息。
+    proven = client.publish('gap-proven', 'coil-north')
+    numbered = client.publish('gap-numbered', 'coil-north')
+    surviving = client.publish('gap-survivor', 'coil-north', delay_seconds=20)
+    # 不匹配标签的消息也会被清理，但补订按标签过滤后应忽略。
+    client.publish('ignored', 'coil-north', tags={'feed': 'alerts'})
+
+    # 处置到终态（延迟消息未就绪、领不到，因此清理时仍有活动义务而幸存）。
+    proven_pack = client.evidence(proven['message_id'])
+    for _ in range(4):
+        for item in client.claim(limit=10):
+            client.settle(item)
+    client.tick(7)
+    pruned = client.request(CHANNEL + '/retention', {})
+    assert {proven['message_id'], numbered['message_id']} <= set(pruned['removed'])
+    assert surviving['message_id'] not in pruned['removed']
+    client.request(f"/messages/{proven['message_id']}", expected=404)
+    window_end = client.clock[0] + 1
+
+    # 交接期间正常发布继续：热键后继与冷键新消息照常入队。
+    hot_after = client.publish('hot-after', 'coil-north')
+    cold_after = client.publish('cold-after', 'coil-south')
+
+    # 冷键没有缺口，立即能领取，不必等热键把历史补完。
+    first_batch = client.claim(limit=10)
+    assert [row['message_id'] for row in first_batch] == [cold_after['message_id']]
+    client.settle(first_batch[0])
+
+    # 创建响应丢失：同身份请求重放返回同一份交接单，不重复建投递。
+    handoff = client.backfill('archive-hour', (start, window_end))
+    replay = client.backfill('archive-hour', (start, window_end), expected=200)
+    assert replay['repeated'] is True and replay['id'] == handoff['id']
+    entry_count = len(handoff['entries'])
+    assert len(client.backfill('archive-hour', (start, window_end), expected=200)['entries']) == entry_count
+
+    statuses = {entry['message_id']: entry['status'] for entry in handoff['entries']}
+    # 幸存消息直接补订；两条删除先未归类；标签不匹配的删除被过滤，冷键不出现缺口。
+    assert statuses[surviving['message_id']] == 'delivered'
+    assert statuses[proven['message_id']] == 'unclassified'
+    assert statuses[numbered['message_id']] == 'unclassified'
+    assert handoff['sealed'] is False and handoff['open_lanes'] == ['coil-north']
+
+    # 热键被未归类屏障挡住，后继仍领不到；冷键没有缺口，其补订可独立领取。
+    second_batch = client.claim(limit=10)
+    assert {row['lane'] for row in second_batch} == {'coil-south'}
+    assert hot_after['message_id'] not in [row['message_id'] for row in second_batch]
+    for item in second_batch:
+        client.settle(item)
+
+    # 上交清理前的证据包：摘要核验通过后，未归类缺口升级为有据删除并撤屏障。
+    intake = client.intake(proven_pack, handoff['id'])
+    assert intake['repeated'] is False
+    assert client.intake(proven_pack, handoff['id'], expected=200)['repeated'] is True
+    tampered = dict(proven_pack)
+    tampered['trace'] = dict(proven_pack['trace'], observed_at=proven_pack['observed_at'] + 1)
+    client.intake(tampered, handoff['id'], expected=409)
+    after_evidence = client.handoff(handoff['id'])
+    proven_entry = next(e for e in after_evidence['entries'] if e['message_id'] == proven['message_id'])
+    assert proven_entry['status'] == 'recovered_evicted'
+
+    # 只剩清理编号的删除仍无法归类，值班员人工裁决跳过并撤除最后一个屏障。
+    numbered_entry = next(e for e in after_evidence['entries']
+                          if e['message_id'] == numbered['message_id'])
+    sealed = client.resolve_gap(handoff['id'], numbered_entry['id'], 'skipped')
+    assert sealed['sealed'] is True and sealed['open_lanes'] == []
+
+    # 屏障撤除后热键仍按 补订前序(幸存) -> 交接期新发布 领取，后继不越位。
+    claimed = []
+    while True:
+        batch = client.claim(limit=10)
+        if not batch:
+            break
+        for item in batch:
+            claimed.append(item['message_id'])
+            client.settle(item)
+    assert claimed == [surviving['message_id'], hot_after['message_id']]
+    return {'backfill': handoff['id'], 'sealed': sealed['sealed'],
+            'summary': sealed['summary'], 'hot_order': claimed}
+
+
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             redrive=redrive, board=board, retention=retention, export=export, backfill=backfill)
 
 
 def main():

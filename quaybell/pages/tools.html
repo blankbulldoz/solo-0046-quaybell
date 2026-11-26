@@ -43,9 +43,30 @@
   <details data-needs-channel>
     <summary>保留复核</summary>
     <div class="compact">
-      <p class="muted">清理时会重新检查消息年龄和所有关联投递。</p>
+      <p class="muted">清理时会重新检查消息年龄和所有关联投递，并在删除前固化顺序键、标签和摘要。</p>
       <div class="button-row"><button type="button" id="retention-plan" class="quiet">查看候选</button><button type="button" id="retention-apply" class="danger" disabled>执行清理</button></div>
       <output class="muted" id="retention-result" aria-live="polite"></output>
     </div>
+  </details>
+  <details data-needs-channel>
+    <summary>补订交接与对账</summary>
+    <form id="backfill" class="compact">
+      <div class="pair">
+        <label>交接单名称<input name="name" placeholder="archive-hour" required></label>
+        <label>标签筛选<textarea name="tags" rows="2">{"feed":"samples"}</textarea></label>
+      </div>
+      <div class="pair">
+        <label>窗口起点（Unix 秒）<input name="window_start" type="number" required></label>
+        <label>窗口终点（Unix 秒）<input name="window_end" type="number" required></label>
+      </div>
+      <button>发起可重试交接</button>
+    </form>
+    <div class="scroll backfill-scroll">
+      <table>
+        <thead><tr><th>交接单</th><th>窗口</th><th>未决</th><th>明细</th></tr></thead>
+        <tbody id="backfill-rows"></tbody>
+      </table>
+    </div>
+    <div id="backfill-detail" class="compact"></div>
   </details>
 </aside>

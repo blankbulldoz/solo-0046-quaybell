@@ -4,10 +4,10 @@ DELIVERY = '''SELECT d.*,m.channel,s.name AS group_name FROM deliveries d
               JOIN messages m ON m.id=d.message_id JOIN subscriptions s ON s.id=d.subscription_id'''
 
 
-def add(db, message_id, group_id, lane, version, ready_at, parent_id=None):
-    return db.execute('''INSERT INTO deliveries(message_id,subscription_id,lane,policy,state,ready_at,parent_id)
-                         VALUES (?,?,?,?,'waiting',?,?)''',
-                      (message_id, group_id, lane, version, ready_at, parent_id)).lastrowid
+def add(db, message_id, group_id, lane, version, ready_at, parent_id=None, position=None):
+    return db.execute('''INSERT INTO deliveries(message_id,subscription_id,lane,policy,state,ready_at,parent_id,position)
+                         VALUES (?,?,?,?,'waiting',?,?,?)''',
+                      (message_id, group_id, lane, version, ready_at, parent_id, position)).lastrowid
 
 
 def get(db, key):

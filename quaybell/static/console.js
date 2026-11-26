@@ -1,6 +1,11 @@
 import {$, TEXT, api, button, clock, node, notice, onForm, parse, rows, run, status} from './relay.js';
 
-const state = {channel: null, group: null, board: null, sequence: 0, retention: null, leases: new Map()};
+const state = {channel: null, group: null, board: null, sequence: 0, retention: null,
+  leases: new Map(), backfill: null, activeHandoff: null};
+const ENTRY_TEXT = {
+  delivered: '已补订', recovered_evicted: '有据删除', unclassified: '未归类缺口',
+  evidence_pending: '待证', accepted: '已确认缺口', skipped: '已跳过',
+};
 const policyFields = ['lease_seconds', 'retry_seconds', 'max_attempts', 'retention_seconds'];
 const group = () => state.board?.groups.find(item => item.name === state.group);
 const channelPath = () => `/channels/${state.channel}`;
@@ -28,6 +33,7 @@ async function choose(channel) {
     state.channel = channel;
     state.group = null;
     state.board = null;
+    state.activeHandoff = null;
     $('publication-result').textContent = '';
     resetRetention();
   }
@@ -45,7 +51,65 @@ async function refresh() {
   if (!group()) state.group = board?.groups[0]?.name ?? null;
   $('channels').replaceChildren(...(topology.length ? topology.map(({name}) =>
     selectButton(name, name === state.channel, () => choose(name))) : [node('p', '暂无频道', 'muted')]));
+  await renderBackfills();
   render();
+}
+
+async function renderBackfills() {
+  if (!state.channel) return;
+  const data = await api(`${channelPath()}/backfills`);
+  state.backfill = data.items;
+  rows('backfill-rows', data.items.map(item => [
+    item.name, `${clock(item.window_start)} → ${clock(item.window_end)}`,
+    item.open ? node('span', String(item.open), 'status') : '已封口',
+    button('查看', () => openHandoff(item.id), {className: 'link'}),
+  ]), 4, '当前频道没有补订交接单');
+  if (state.activeHandoff) await openHandoff(state.activeHandoff, true);
+}
+
+async function openHandoff(id, keep = false) {
+  const handoff = await api(`${channelPath()}/backfills/${id}`);
+  state.activeHandoff = id;
+  const detail = $('backfill-detail');
+  detail.replaceChildren();
+  const head = node('h4', `交接单 #${handoff.id} · ${handoff.name} · ${handoff.sealed ? '已封口' : '未封口'}`);
+  detail.append(head, node('p', `未决顺序键：${handoff.open_lanes.join('、') || '无'}`, 'muted'));
+  const table = node('table');
+  table.append(node('thead'));
+  const body = node('tbody');
+  for (const entry of handoff.entries) {
+    const tr = node('tr');
+    tr.append(node('td', `#${entry.message_id}`), node('td', entry.lane),
+      node('td', ENTRY_TEXT[entry.status] || entry.status));
+    const actions = node('td');
+    if (entry.status === 'unclassified') {
+      const upload = node('input');
+      upload.type = 'file'; upload.accept = 'application/json';
+      upload.setAttribute('aria-label', `缺口 #${entry.message_id} 的证据包`);
+      upload.addEventListener('change', () => run(async () => {
+        const pack = parse(await upload.files[0].text(), '证据包');
+        await api(`${channelPath()}/backfills/${id}/evidence`, {pack, backfill: id});
+        notice('证据已核验并对账'); await refresh();
+      }));
+      actions.append(upload,
+        button('确认缺口', () => resolveEntry(id, entry.id, 'accepted'), {className: 'quiet'}),
+        button('跳过', () => resolveEntry(id, entry.id, 'skipped'), {className: 'danger'}));
+    } else if (entry.evidence_sha256) {
+      actions.append(node('span', entry.evidence_sha256.slice(0, 10), 'mono muted'));
+    }
+    tr.append(actions);
+    body.append(tr);
+  }
+  table.append(body);
+  detail.append(table);
+  if (!keep) render();
+}
+
+async function resolveEntry(handoff, entry, resolution) {
+  const note = resolution === 'accepted' ? '值班员凭清理编号确认缺口' : '值班员裁决跳过该缺口';
+  await api(`${channelPath()}/backfills/${handoff}/resolve`, {entry, resolution, note});
+  notice(`缺口已${resolution === 'accepted' ? '确认' : '跳过'}`);
+  await refresh();
 }
 
 function render() {
@@ -70,7 +134,7 @@ function render() {
     form.dataset.stamp = stamp;
   }
   $('queue-group').textContent = selected?.name ?? '';
-  $('stats').replaceChildren(...['ready','leased','blocked','delayed','paused','expired'].map(key => {
+  $('stats').replaceChildren(...['ready','leased','blocked','blocked_gap','delayed','paused','expired'].map(key => {
     const card = node('div', '', 'stat');
     card.dataset.state = key;
     card.append(node('strong', selected?.counts[key] ?? 0), node('span', TEXT[key], 'muted'));
@@ -177,6 +241,17 @@ onForm('claim', async ({worker, limit}) => {
   const reply = await api(`${groupPath()}/claim`, {worker, limit: Number(limit)});
   for (const item of reply.items) state.leases.set(item.delivery_id, {...item, channel, group: selected});
   notice(reply.paused ? '消费组已暂停' : `领取 ${reply.items.length} 条`);
+  await refresh();
+});
+onForm('backfill', async ({name, tags, window_start, window_end}) => {
+  if (!group()) return;
+  const reply = await api(`${groupPath()}/backfills`, {
+    name, tags: parse(tags, '标签筛选'),
+    window_start: Number(window_start), window_end: Number(window_end),
+  });
+  state.activeHandoff = reply.id;
+  notice(reply.repeated ? '交接单已存在，返回原对账结果' : `已建立交接单 #${reply.id}`);
+  $('backfill').reset();
   await refresh();
 });
 onForm('revise', async values => {
