@@ -112,7 +112,7 @@ td.wrap { white-space: normal; min-width: 115px; overflow-wrap: anywhere; }
 .compact p { margin: 0; }
 .compact > button { justify-self: start; }
 .pair { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; }
-input, textarea { width: 100%; min-width: 0; border: 1px solid #c9d5cb; border-radius: 5px; padding: 6px 7px; color: var(--ink); background: var(--surface); }
+input, textarea, select { width: 100%; min-width: 0; border: 1px solid #c9d5cb; border-radius: 5px; padding: 6px 7px; color: var(--ink); background: var(--surface); }
 textarea { resize: vertical; font-family: ui-monospace, monospace; }
 output { white-space: pre-wrap; overflow-wrap: anywhere; }
 .leases:empty { display: none; }

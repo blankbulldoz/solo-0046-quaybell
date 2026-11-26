@@ -1,4 +1,5 @@
-from . import catalog, claims, disposition, expiry, inputs, publication, redrive, retention, subscriptions
+from . import (catalog, claims, coalescing, disposition, expiry, inputs, publication,
+               redrive, retention, subscriptions)
 from .protocol import Reply
 
 
@@ -11,6 +12,12 @@ def write(db, action, args, raw, now):
         return Reply(subscriptions.create(db, *args, raw, now), 201)
     if action == 'pause':
         return Reply(subscriptions.pause(db, *args, raw, now))
+    if action == 'group_mode':
+        return Reply(coalescing.configure(db, *args, raw, now))
+    if action == 'coalesce':
+        return Reply(coalescing.coalesce_endpoint(db, *args, raw, now))
+    if action == 'coalesce_all':
+        return Reply(coalescing.all_endpoint(db, raw, now))
     if action == 'publish':
         item = publication.publish(db, *args, raw, now)
         return Reply(item, 200 if item['repeated'] else 201)

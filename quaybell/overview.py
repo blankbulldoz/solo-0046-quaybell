@@ -1,6 +1,6 @@
 from collections import Counter
 
-from . import catalog, deadletters, eligibility, inspection, policy, subscriptions
+from . import catalog, coalescing, deadletters, eligibility, inspection, policy, subscriptions
 
 
 def board(db, channel, now):
@@ -12,7 +12,15 @@ def board(db, channel, now):
             counts[item['cause']] += 1
             if len(sample) < 20:
                 sample.append(item)
-        summary.append(group | {'counts': dict(counts), 'sample': sample})
+        superseded_total = db.execute(
+            "SELECT COUNT(*) FROM deliveries WHERE subscription_id=? AND state='superseded'",
+            (group['id'],)).fetchone()[0]
+        if superseded_total:
+            counts['superseded'] = superseded_total
+        summary.append(group | {'counts': dict(counts), 'sample': sample,
+                                'superseded_total': superseded_total,
+                                'coalesced_total': superseded_total})
     return {'channel': channel, 'observed_at': now, 'policy': policy.read(db, channel),
             'groups': summary, 'messages': inspection.recent(db, channel),
+            'supersessions': coalescing.recent(db, channel),
             'dead': deadletters.list_recent(db, channel)}

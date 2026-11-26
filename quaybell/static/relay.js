@@ -3,7 +3,8 @@ export const TEXT = {
   ready: '可领取', blocked: '顺序阻挡', delayed: '未到就绪时间', paused: '暂停取件',
   leased: '租约中', expired: '租约超时', acked: '已确认', nacked: '已拒绝',
   waiting: '等待中', dead: '死信', open: '未应答', leased_event: '发放租约',
-  published: '已发布', redriven: '重投',
+  superseded: '已被新读数取代', coalesced: '已合并最新读数',
+  published: '已发布', redriven: '重投', group_mode_changed: '合并模式已变更',
 };
 
 export async function api(path, data) {

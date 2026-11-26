@@ -207,9 +207,99 @@ def export(client):
     return {'format': record['format'], 'sha256': digest}
 
 
+def _group_delivery(trace, group):
+    return next(item for item in trace['deliveries'] if item['group_name'] == group)
+
+
+def coalesce(client):
+    client.channel(POLICY | {'lease_seconds': 60})
+    client.subscribe('latest', mode='latest')
+    client.subscribe('plain')
+    lane = 'reading-lane'
+
+    first = client.publish('reading-1', lane, payload={'reading': 1})
+    d1 = first['fanout']['latest']
+    leased = client.claim(group='latest')[0]
+    assert leased['delivery_id'] == d1
+
+    second = client.publish('reading-2', lane, payload={'reading': 2})
+    third = client.publish('reading-3', lane, payload={'reading': 3})
+    delayed = client.publish('reading-4', lane, payload={'reading': 4}, delay_seconds=5)
+    d2, d3, d4 = (second['fanout']['latest'], third['fanout']['latest'],
+                  delayed['fanout']['latest'])
+
+    # While the newest reading is delayed it is not yet effective: the two
+    # unattempted backlog deliveries remain stacked and visible to operators.
+    assert delayed['supersessions'] == []
+    for message_id, delivery_id in ((second['message_id'], d2), (third['message_id'], d3)):
+        item = _group_delivery(client.trace(message_id), 'latest')
+        assert item['id'] == delivery_id and item['state'] == 'waiting'
+        assert item['attempt_count'] == 0 and item['superseded_by'] is None
+
+    # Once ready_at arrives, the next claim performs the lazy coalescing pass.
+    # d1 is still leased, so d4 replaces d2/d3 but cannot overtake d1.
+    client.tick(5)
+    assert client.claim(5, group='latest') == []
+    old2 = _group_delivery(client.trace(second['message_id']), 'latest')
+    old3 = _group_delivery(client.trace(third['message_id']), 'latest')
+    new4 = _group_delivery(client.trace(delayed['message_id']), 'latest')
+    assert (old2['state'], old2['superseded_by']) == ('superseded', d4)
+    assert (old3['state'], old3['superseded_by']) == ('superseded', d4)
+    assert old2['superseded_by_message_id'] == delayed['message_id']
+    assert new4['supersedes'] == [d2, d3]
+
+    board = client.request(CHANNEL)
+    links = {(row['old_delivery_id'], row['new_delivery_id']) for row in board['supersessions']}
+    assert {(d2, d4), (d3, d4)} <= links
+
+    # The leased reading is settled normally; only then does d4 become claimable.
+    assert client.settle(leased)['state'] == 'acked'
+    got = client.claim(group='latest')
+    assert [item['delivery_id'] for item in got] == [d4]
+    assert got[0]['envelope']['payload'] == {'reading': 4}
+    client.settle(got[0])
+
+    # An attempted/nacked delivery is not eligible for replacement. A still
+    # unattempted delivery behind it can be replaced by the next fresh reading.
+    retry_lane = 'retry-lane'
+    retry1 = client.publish('retry-1', retry_lane)
+    r1 = retry1['fanout']['latest']
+    retry_lease = client.claim(group='latest')[0]
+    assert retry_lease['delivery_id'] == r1
+    assert client.settle(retry_lease, 'nack')['state'] == 'waiting'
+    retry2 = client.publish('retry-2', retry_lane)
+    r2 = retry2['fanout']['latest']
+    retry3 = client.publish('retry-3', retry_lane)
+    r3 = retry3['fanout']['latest']
+    assert retry3['supersessions'] == []
+    assert _group_delivery(client.trace(retry1['message_id']), 'latest')['state'] == 'waiting'
+    client.tick(3)
+    retried = client.claim(group='latest')
+    assert [item['delivery_id'] for item in retried] == [r1]
+    assert retried[0]['lease']['number'] == 2
+    replaced_middle = _group_delivery(client.trace(retry2['message_id']), 'latest')
+    assert (replaced_middle['state'], replaced_middle['superseded_by']) == ('superseded', r3)
+    assert _group_delivery(client.trace(retry1['message_id']), 'latest')['state'] == 'leased'
+    client.settle(retried[0])
+    assert [item['delivery_id'] for item in client.claim(group='latest')] == [r3]
+
+    # The ordinary group is independent and receives all four original readings
+    # in order; same-lane head-of-line blocking still requires settling heads.
+    ordinary = []
+    for _ in range(4):
+        item = client.claim(group='plain')[0]
+        ordinary.append(item['message_id'])
+        client.settle(item)
+    assert ordinary == [
+        first['message_id'], second['message_id'], third['message_id'], delayed['message_id']]
+    return {'processing': d1, 'superseded': [d2, d3], 'latest': d4,
+            'retry_protected': r1, 'ordinary_messages': ordinary}
+
+
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             redrive=redrive, board=board, retention=retention, export=export, coalesce=coalesce,
+             latest=coalesce, merge=coalesce, conflation=coalesce)
 
 
 def main():

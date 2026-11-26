@@ -56,7 +56,8 @@ function render() {
   $('policy-version').textContent = board ? `当前策略 v${board.policy.version}` : '';
   for (const item of document.querySelectorAll('[data-needs-channel]')) item.hidden = !board;
   $('groups').replaceChildren(...(board?.groups.length ? board.groups.map(item =>
-    selectButton(item.paused ? `${item.name} · 暂停` : item.name, item.name === state.group, () => {
+    selectButton(`${item.coalesce ? '⇥ ' : ''}${item.paused ? `${item.name} · 暂停` : item.name}`,
+      item.name === state.group, () => {
       state.group = item.name;
       render();
     })) : [node('p', '暂无消费组', 'muted')]));
@@ -69,7 +70,9 @@ function render() {
     for (const field of policyFields) form.elements[field].value = board?.policy[field] ?? '';
     form.dataset.stamp = stamp;
   }
-  $('queue-group').textContent = selected?.name ?? '';
+  $('queue-group').textContent = selected
+    ? `${selected.name} · ${selected.coalesce ? '最新合并' : '每条都收'} · 延迟项${selected.supersede_when === 'publish' ? '发布即取代' : '到期后取代'}`
+    : '';
   $('stats').replaceChildren(...['ready','leased','blocked','delayed','paused','expired'].map(key => {
     const card = node('div', '', 'stat');
     card.dataset.state = key;
@@ -79,6 +82,14 @@ function render() {
   rows('queue-rows', (selected?.sample || []).map(item => [traceLink(item.message_id, `#${item.id}`),
     item.lane, status(item.cause), `#${item.head_id}`, clock(item.ready_at)]), 5,
     selected ? '当前消费组没有未完成投递' : '请选择已有消费组');
+  const supersessionText = {published: '发布时', ready: '到期合并', manual: '手动合并'};
+  const supersessions = board?.supersessions || [];
+  $('supersession-total').textContent = supersessions.length ? `最近 ${supersessions.length} 条` : '';
+  rows('supersession-rows', supersessions.map(link => [
+    traceLink(link.old_message_id, `#${link.old_delivery_id}`),
+    traceLink(link.new_message_id, `#${link.new_delivery_id}`),
+    link.lane, supersessionText[link.trigger] || link.trigger, clock(link.at),
+  ]), 5, '当前频道还没有取代记录');
   const messages = board?.messages || [];
   $('message-total').textContent = messages.length ? `最近 ${messages.length} 条` : '';
   rows('message-rows', messages.map(item => [traceLink(item.id), item.producer, item.dedup_key,
@@ -132,10 +143,26 @@ async function trace(id) {
     const label = node('h4', `#${item.id} · ${item.group_name} · v${item.policy} `);
     if (item.parent_id) label.append(`· 源投递 #${item.parent_id} `);
     label.append(status(item.state));
+    const lineage = node('p', '', 'muted');
+    if (item.superseded_by) {
+      lineage.append('已被投递 ');
+      lineage.append(traceLink(item.superseded_by_message_id, `#${item.superseded_by}`));
+      lineage.append(' 取代');
+    }
+    if (item.supersession_links?.length) {
+      if (lineage.textContent) lineage.append('；');
+      lineage.append('取代旧投递 ');
+      item.supersession_links.forEach((link, index) => {
+        if (index) lineage.append('、');
+        lineage.append(traceLink(link.old_message_id, `#${link.old_delivery_id}`));
+      });
+    }
     const entries = node('ul', '', 'trace-attempts');
     entries.append(...item.attempts.map(a => node('li',
       `第 ${a.number} 次 · ${a.worker} · ${TEXT[a.outcome]} · ${clock(a.started)}${a.reason ? ` · ${a.reason}` : ''}`)));
-    section.append(label, entries);
+    section.append(label);
+    if (lineage.textContent) section.append(lineage);
+    section.append(entries);
     return section;
   }));
   if (!facts.deliveries.length) $('trace-deliveries').append(node('p', '发布时没有匹配消费组', 'muted'));

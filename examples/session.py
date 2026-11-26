@@ -39,20 +39,25 @@ class Session:
     def channel(self, policy=None):
         return self.request('/channels', {'name': 'wire-gate', 'policy': policy or POLICY}, 201)
 
-    def subscribe(self, name='oscillator', tags=None):
-        return self.request(CHANNEL + '/groups', {'name': name, 'tags': tags or {}}, 201)
+    def subscribe(self, name='oscillator', tags=None, expected=201, **options):
+        payload = {'name': name, 'tags': tags or {}} | options
+        return self.request(CHANNEL + '/groups', payload, expected)
 
     def publish(self, key='signal-1', lane='coil-north', expected=201, **extra):
         return self.request(CHANNEL + '/messages', envelope(key, lane, **extra), expected)
 
-    def claim(self, limit=1, worker='bench-worker'):
-        return self.request(GROUP + '/claim', {'worker': worker, 'limit': limit})['items']
+    def claim(self, limit=1, worker='bench-worker', group='oscillator', **options):
+        payload = {'worker': worker, 'limit': limit} | options
+        return self.request(CHANNEL + f'/groups/{group}/claim', payload)['items']
 
     def settle(self, item, mode='ack', expected=200):
         data = {'token': item['lease']['token']}
         if mode == 'nack':
             data['reason'] = '下游拒绝校验帧'
         return self.request(f"/deliveries/{item['delivery_id']}/{mode}", data, expected)
+
+    def trace(self, message_id):
+        return self.request(f'/messages/{message_id}')
 
 
 def envelope(key='signal-1', lane='coil-north', **extra):

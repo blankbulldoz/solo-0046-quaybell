@@ -17,6 +17,18 @@
       <summary>添加消费组</summary>
       <form id="create-group" class="compact">
         <label>组名<input name="name" required maxlength="48" pattern="[a-z][a-z0-9-]*" placeholder="drift-keeper"></label>
+        <label>投递模式
+          <select name="mode">
+            <option value="all">普通订阅：每条都收</option>
+            <option value="latest">合并模式：只留同键最新读数</option>
+          </select>
+        </label>
+        <label>延迟项取代时机
+          <select name="coalesce_timing">
+            <option value="ready">延迟到期后，在下一次取件/回收时取代</option>
+            <option value="publish">发布为延迟项时立即取代</option>
+          </select>
+        </label>
         <label>匹配标签<textarea name="tags" rows="2" placeholder='{"feed":"telemetry"}'>{}</textarea></label>
         <button>添加</button>
       </form>

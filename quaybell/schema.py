@@ -1,4 +1,4 @@
-VERSION = 1
+VERSION = 2
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS channels (
   name TEXT PRIMARY KEY,
@@ -20,6 +20,9 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   name TEXT NOT NULL,
   tags TEXT NOT NULL,
   paused INTEGER NOT NULL DEFAULT 0 CHECK(paused IN (0,1)),
+  mode TEXT NOT NULL DEFAULT 'all' CHECK(mode IN ('all','latest')),
+  mode_alias TEXT NOT NULL DEFAULT 'all',
+  coalesce_timing TEXT NOT NULL DEFAULT 'ready' CHECK(coalesce_timing IN ('ready','publish')),
   created REAL NOT NULL,
   UNIQUE(channel, name)
 );
@@ -43,11 +46,12 @@ CREATE TABLE IF NOT EXISTS deliveries (
   subscription_id INTEGER NOT NULL REFERENCES subscriptions(id),
   lane TEXT NOT NULL,
   policy INTEGER NOT NULL,
-  state TEXT NOT NULL CHECK(state IN ('waiting','leased','acked','dead')),
+  state TEXT NOT NULL CHECK(state IN ('waiting','leased','acked','dead','superseded')),
   ready_at REAL NOT NULL,
   attempt_count INTEGER NOT NULL DEFAULT 0,
   terminal_at REAL,
-  parent_id INTEGER UNIQUE REFERENCES deliveries(id)
+  parent_id INTEGER UNIQUE REFERENCES deliveries(id),
+  superseded_by INTEGER REFERENCES deliveries(id)
 );
 CREATE TABLE IF NOT EXISTS attempts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,6 +75,16 @@ CREATE TABLE IF NOT EXISTS journal (
   kind TEXT NOT NULL,
   details TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS delivery_supersessions (
+  old_delivery_id INTEGER PRIMARY KEY REFERENCES deliveries(id) ON DELETE CASCADE,
+  new_delivery_id INTEGER NOT NULL REFERENCES deliveries(id) ON DELETE CASCADE,
+  subscription_id INTEGER NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
+  lane TEXT NOT NULL,
+  at REAL NOT NULL,
+  trigger TEXT NOT NULL CHECK(trigger IN ('published','ready','manual')),
+  old_message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  new_message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE
+);
 CREATE INDEX IF NOT EXISTS delivery_lane ON deliveries(subscription_id,lane,id)
   WHERE state IN ('waiting','leased');
 CREATE INDEX IF NOT EXISTS delivery_origin ON deliveries(message_id,id);
@@ -78,4 +92,6 @@ CREATE INDEX IF NOT EXISTS attempt_deadline ON attempts(expires,id) WHERE outcom
 CREATE UNIQUE INDEX IF NOT EXISTS one_open_attempt ON attempts(delivery_id) WHERE outcome='open';
 CREATE INDEX IF NOT EXISTS message_channel ON messages(channel,published,id);
 CREATE INDEX IF NOT EXISTS journal_message ON journal(message_id,id);
+CREATE INDEX IF NOT EXISTS supersession_new ON delivery_supersessions(new_delivery_id,old_delivery_id);
+CREATE INDEX IF NOT EXISTS supersession_channel_time ON delivery_supersessions(subscription_id,at,old_delivery_id);
 '''

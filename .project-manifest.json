@@ -52,6 +52,11 @@
       "responsibility": "按组取件和发放租约"
     },
     {
+      "id": "coalescing",
+      "path": "quaybell/coalescing.py",
+      "responsibility": "同组同键未尝试读数的最新合并、取代关系和追溯"
+    },
+    {
       "id": "eligibility",
       "path": "quaybell/eligibility.py",
       "responsibility": "同键队首和原因分类"
@@ -403,6 +408,27 @@
         "inspection",
         "journal",
         "redrive"
+      ]
+    },
+    {
+      "id": "coalesce",
+      "name": "最新读数合并与取代追溯",
+      "entry": "POST /v1/channels/{channel}/groups/{group}/claim",
+      "success": "延迟读数到期后取代同键未尝试旧投递，处理中和重试投递不受影响",
+      "failure": "延迟未到期时不作废旧投递；普通组继续收到每条",
+      "verification": "python3 -m examples.walkthrough coalesce",
+      "steps": [
+        "建立 latest 合并组和 all 普通组",
+        "构造处理中、两条待领和一条延迟读数同键叠加",
+        "验证延迟到期后的取件/回收触发取代",
+        "从新旧消息轨迹和频道取代记录追查关系"
+      ],
+      "module_ids": [
+        "coalescing",
+        "claims",
+        "publication",
+        "inspection",
+        "overview"
       ]
     },
     {
