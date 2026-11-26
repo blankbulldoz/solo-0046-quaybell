@@ -1,4 +1,4 @@
-VERSION = 1
+VERSION = 2
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS channels (
   name TEXT PRIMARY KEY,
@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS messages (
   lane TEXT NOT NULL,
   envelope TEXT NOT NULL,
   fingerprint TEXT NOT NULL,
+  payload_bytes INTEGER NOT NULL,
   policy INTEGER NOT NULL,
   published REAL NOT NULL,
   available REAL NOT NULL,
@@ -72,6 +73,8 @@ CREATE TABLE IF NOT EXISTS journal (
   details TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS delivery_lane ON deliveries(subscription_id,lane,id)
+  WHERE state IN ('waiting','leased');
+CREATE INDEX IF NOT EXISTS delivery_head ON deliveries(subscription_id,lane,state,id)
   WHERE state IN ('waiting','leased');
 CREATE INDEX IF NOT EXISTS delivery_origin ON deliveries(message_id,id);
 CREATE INDEX IF NOT EXISTS attempt_deadline ON attempts(expires,id) WHERE outcome='open';

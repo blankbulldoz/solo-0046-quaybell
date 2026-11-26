@@ -27,7 +27,7 @@ python3 -m quaybell --demo
 | `/channels/{channel}/groups/{group}/pause` | POST | `paused` 为布尔值 |
 | `/channels/{channel}/preview` | POST | 用发布信封查询当前标签匹配结果 |
 | `/channels/{channel}/messages` | POST | `producer`、`key`、`lane`、`payload`、可选 `tags`、`delay_seconds` |
-| `/channels/{channel}/groups/{group}/claim` | POST | `worker`、可选 `limit`，返回含 `lease.token` 的领取项 |
+| `/channels/{channel}/groups/{group}/claim` | POST | `worker`、可选 `limit` 与 `max_bytes`，返回含 `lease.token` 的领取项、批次字节统计及未领原因 |
 | `/deliveries/{id}/ack` | POST | `token` |
 | `/deliveries/{id}/nack` | POST | `token` 和 `reason` |
 | `/sweep` | POST | `{}` 或 `limit`，按原截止时间回收全局租约 |
@@ -38,6 +38,8 @@ python3 -m quaybell --demo
 | `/channels/{channel}/retention` | GET / POST | 候选复核，或以 `{}` / `limit` 清理实际合格项 |
 
 默认策略是 `lease_seconds=24`、`retry_seconds=3`、`max_attempts=3`、`retention_seconds=3600`。重发原生产键时复用初始匹配结果，内容变化则返回 409。如果应用侧副作用必须去重，应按消息和消费组身份设计处理键。重投需要按其业务语义明确将后继身份识别为有意重新处理。
+
+领取可带 `max_bytes`（0～4194304，缺省不限），按规范化 JSON 载荷计本批总字节。响应中 `outcome` 为 `empty`（没有可领取队首）、`oversized`（有队首本机预算装不下，且无其他可领）、`claimed` 或 `paused`；`budget` 给出 `max_bytes`、`used_bytes` 和 `remaining_bytes`；`unfit` 汇总单条即超出预算的队首（其顺序键继续被挡住，后继不可绕过，预算更大的机器之后仍可取到），`deferred` 汇总单条装得下、但与本批已选内容合计超预算而留待下一批的队首。两者都只列前 30 条明细并另给总数。候选仅按顺序键队首枚举，热键积压再深也只多一次索引查找。
 
 以下载荷可发布到示例频道。默认延迟为零。
 
@@ -50,6 +52,7 @@ python3 -m quaybell --demo
 ```sh
 python3 -m compileall -q quaybell examples
 python3 -m examples.walkthrough claim
+python3 -m examples.walkthrough budget
 python3 -m examples.walkthrough retention
 python3 -m examples.walkthrough export
 ```

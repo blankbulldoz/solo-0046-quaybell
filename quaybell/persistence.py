@@ -2,6 +2,7 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
+from . import codec
 from .schema import SCHEMA, VERSION
 
 
@@ -11,10 +12,28 @@ class RelayPersistence:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in (0, VERSION):
+            if version > VERSION:
                 raise RuntimeError(f'无法打开存储版本 {version}')
             db.execute('PRAGMA journal_mode=WAL')
             db.executescript(f'BEGIN IMMEDIATE;\n{SCHEMA}\nPRAGMA user_version={VERSION};\nCOMMIT;')
+            if version:
+                self._upgrade(db, version)
+
+    @staticmethod
+    def _upgrade(db, version):
+        """V1 kept no payload size; add the column and derive it from the stored envelope."""
+        if version < 2:
+            db.execute('BEGIN IMMEDIATE')
+            try:
+                db.execute('ALTER TABLE messages ADD COLUMN payload_bytes INTEGER NOT NULL DEFAULT 0')
+                for row in db.execute('SELECT id,envelope FROM messages').fetchall():
+                    db.execute('UPDATE messages SET payload_bytes=? WHERE id=?',
+                               (codec.size(codec.unpack(row['envelope'])['payload']), row['id']))
+                db.execute('COMMIT')
+            except BaseException:
+                if db.in_transaction:
+                    db.execute('ROLLBACK')
+                raise
 
     @contextmanager
     def _connection(self):

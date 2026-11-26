@@ -207,9 +207,42 @@ def export(client):
     return {'format': record['format'], 'sha256': digest}
 
 
+def budget(client):
+    client.channel()
+    client.subscribe()
+    head = client.publish('hot-head', 'coil-hot', payload={'blob': 'H' * 200})
+    tail = client.publish('hot-tail', 'coil-hot', payload={'blob': 't'})
+    first = client.publish('cold-first', 'coil-cold-a', payload={'blob': 'a' * 40})
+    second = client.publish('cold-second', 'coil-cold-b', payload={'blob': 'b' * 160})
+    third = client.publish('cold-third', 'coil-cold-c', payload={'blob': 'c' * 10})
+    small = client.request(GROUP + '/claim', {'worker': 'small-node', 'limit': 30, 'max_bytes': 200})
+    lanes = {item['lane'] for item in small['items']}
+    assert lanes == {'coil-cold-a', 'coil-cold-c'}, lanes
+    assert {item['message_id'] for item in small['items']} == {first['message_id'], third['message_id']}
+    assert small['budget']['used_bytes'] <= 200 and small['unfit']['total'] == 1
+    carried = [item for item in small['deferred']['items'] if item['reason'] == 'budget']
+    assert [item['message_id'] for item in carried] == [second['message_id']]
+    big = client.request(GROUP + '/claim', {'worker': 'big-node', 'limit': 30, 'max_bytes': 16384})
+    big_ids = [item['message_id'] for item in big['items']]
+    assert head['message_id'] in big_ids and tail['message_id'] not in big_ids, big_ids
+    assert second['message_id'] in big_ids
+    client.settle(next(item for item in big['items'] if item['message_id'] == head['message_id']))
+    assert client.claim()[0]['message_id'] == tail['message_id']
+    empty = client.request(GROUP + '/claim', {'worker': 'small-node', 'limit': 30, 'max_bytes': 1})
+    assert empty['outcome'] == 'empty' and empty['items'] == [] and empty['unfit']['total'] == 0
+    return {'small': minor(small), 'big': minor(big), 'empty': empty['outcome'],
+            'deferred': [item['reason'] for item in small['deferred']['items']],
+            'unfit': small['unfit']['total']}
+
+
+def minor(reply):
+    return {'outcome': reply['outcome'], 'deliveries': [item['delivery_id'] for item in reply['items']],
+            'used': reply['budget']['used_bytes']}
+
+
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             redrive=redrive, board=board, retention=retention, export=export, budget=budget)
 
 
 def main():

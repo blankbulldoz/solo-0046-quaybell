@@ -273,6 +273,28 @@
       ]
     },
     {
+      "id": "budget",
+      "name": "按载荷字节预算领取",
+      "entry": "POST /v1/channels/{channel}/groups/{group}/claim",
+      "success": "小预算机跳过装不下的热键队首，装入冷键并留下放不下的候选，大预算机之后仍取到热键队首",
+      "failure": "单条超出预算的队首不可领，同键后继不得绕过",
+      "verification": "python3 -m examples.walkthrough budget",
+      "steps": [
+        "通过 POST /v1/channels/{channel}/groups/{group}/claim 携带可选 max_bytes 发起操作",
+        "只枚举顺序键队首，热键大量排队也不顺扫后继",
+        "返回区分空队列、本机装不下的键与留待下一批的候选",
+        "小预算机跳过装不下的热键队首，装入冷键并留下放不下的候选，大预算机之后仍取到热键队首"
+      ],
+      "module_ids": [
+        "claims",
+        "eligibility",
+        "publication",
+        "attempts",
+        "expiry",
+        "journal"
+      ]
+    },
+    {
       "id": "ack",
       "name": "凭租约确认处理结果",
       "entry": "POST /v1/deliveries/{id}/ack",

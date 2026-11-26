@@ -17,6 +17,11 @@ def fingerprint(raw):
     return hashlib.sha256(raw.encode('utf-8')).hexdigest()
 
 
+def size(value):
+    """Canonical wire size in bytes; packing is ASCII so characters equal bytes."""
+    return len(pack(value))
+
+
 def object_body(raw):
     try:
         value = unpack(raw)

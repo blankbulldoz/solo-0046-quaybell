@@ -29,10 +29,10 @@ def publish(db, channel, raw, now):
         return receipt(db, existing, True)
     active = policy.read(db, channel)
     ready_at = now + envelope.delay_seconds
-    key = db.execute('''INSERT INTO messages(channel,producer,dedup_key,lane,envelope,fingerprint,policy,published,available)
-                        VALUES (?,?,?,?,?,?,?,?,?)''',
+    key = db.execute('''INSERT INTO messages(channel,producer,dedup_key,lane,envelope,fingerprint,payload_bytes,policy,published,available)
+                        VALUES (?,?,?,?,?,?,?,?,?,?)''',
                      (channel, envelope.producer, envelope.dedup_key, envelope.lane, encoded, digest,
-                      active['version'], now, ready_at)).lastrowid
+                      codec.size(envelope.payload), active['version'], now, ready_at)).lastrowid
     fanout = {}
     for group in routing.matching(db, channel, envelope.tags):
         fanout[group['name']] = delivery.add(db, key, group['id'], envelope.lane, active['version'], ready_at)

@@ -96,6 +96,19 @@ function render() {
   renderLeases();
 }
 
+function claimSummary(reply) {
+  if (reply.paused) return '消费组已暂停';
+  const {max_bytes: cap, used_bytes: used} = reply.budget;
+  const scope = cap == null ? '' : ` · ${used}/${cap} 字节`;
+  if (reply.outcome === 'empty') return '没有可领取的投递';
+  if (reply.outcome === 'oversized') {
+    return `本机预算装不下 ${reply.unfit.total} 个队首${scope}`;
+  }
+  const carried = reply.deferred.total ? ` · 留待下批 ${reply.deferred.total} 个` : '';
+  const skipped = reply.unfit.total ? ` · 装不下 ${reply.unfit.total} 个` : '';
+  return `领取 ${reply.items.length} 条${scope}${carried}${skipped}`;
+}
+
 function renderLeases() {
   const entries = [...state.leases.values()].filter(item => item.channel === state.channel && item.group === state.group);
   $('leases').replaceChildren(...entries.map(item => {
@@ -171,12 +184,14 @@ onForm('publish', async (values, mode) => {
     : `消息 #${reply.message_id} · ${reply.repeated ? '已复用原回执' : '已发布'} · ${Object.keys(reply.fanout).length} 个消费组`;
   if (mode !== 'preview') await refresh();
 });
-onForm('claim', async ({worker, limit}) => {
+onForm('claim', async ({worker, limit, max_bytes}) => {
   if (!group()) return;
   const channel = state.channel, selected = state.group;
-  const reply = await api(`${groupPath()}/claim`, {worker, limit: Number(limit)});
+  const data = {worker, limit: Number(limit)};
+  if (max_bytes.trim() !== '') data.max_bytes = Number(max_bytes);
+  const reply = await api(`${groupPath()}/claim`, data);
   for (const item of reply.items) state.leases.set(item.delivery_id, {...item, channel, group: selected});
-  notice(reply.paused ? '消费组已暂停' : `领取 ${reply.items.length} 条`);
+  notice(claimSummary(reply));
   await refresh();
 });
 onForm('revise', async values => {
