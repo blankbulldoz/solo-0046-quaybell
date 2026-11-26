@@ -19,17 +19,27 @@ class Envelope:
     tags: dict
     payload: object
     delay_seconds: int
+    deadline_seconds: int | None = None
 
     @classmethod
     def from_input(cls, raw):
-        inputs.require(raw, ('producer','key','lane','payload'), ('tags','delay_seconds'))
+        inputs.require(raw, ('producer','key','lane','payload'),
+                       ('tags','delay_seconds','deadline_seconds'))
+        deadline = raw.get('deadline_seconds')
         result = cls(inputs.name(raw['producer'], '生产者'), inputs.token(raw['key'], '生产键'),
                      inputs.token(raw['lane'], '顺序键'), labels(raw.get('tags', {})),
-                     raw['payload'], inputs.integer(raw.get('delay_seconds', 0), 0, 86400, '延迟秒数'))
+                     raw['payload'], inputs.integer(raw.get('delay_seconds', 0), 0, 86400, '延迟秒数'),
+                     None if deadline is None else
+                     inputs.integer(deadline, 0, 604800, '处理期限秒数'))
         if len(result.encoded()) > 16384:
             raise invalid('消息序列化后最多 16 KiB')
         return result
 
     def encoded(self):
-        return codec.pack(dict(lane=self.lane, tags=self.tags, payload=self.payload,
-                               delay_seconds=self.delay_seconds))
+        fields = dict(lane=self.lane, tags=self.tags, payload=self.payload,
+                      delay_seconds=self.delay_seconds)
+        # An absent deadline keeps the historical envelope shape, so messages
+        # published before this field existed still deduplicate after upgrade.
+        if self.deadline_seconds is not None:
+            fields['deadline_seconds'] = self.deadline_seconds
+        return codec.pack(fields)

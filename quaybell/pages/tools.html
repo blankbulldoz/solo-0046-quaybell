@@ -10,6 +10,7 @@
       <div class="pair">
         <label>顺序键<input name="lane" value="coil-north" required></label>
         <label>延迟秒数<input name="delay_seconds" type="number" min="0" max="86400" value="0" required></label>
+        <label>处理期限秒数<input name="deadline_seconds" type="number" min="0" max="604800" placeholder="留空不限"></label>
       </div>
       <label>标签<textarea name="tags" rows="2">{"feed":"telemetry"}</textarea></label>
       <label>消息载荷<textarea name="payload" rows="3">{"reading":48,"unit":"mV"}</textarea></label>

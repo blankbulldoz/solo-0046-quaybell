@@ -9,6 +9,6 @@ def trace(db, message_id):
 
 
 def recent(db, channel, limit=30):
-    rows = db.execute('''SELECT id,producer,dedup_key,lane,policy,published,available
+    rows = db.execute('''SELECT id,producer,dedup_key,lane,policy,published,available,deadline
                          FROM messages WHERE channel=? ORDER BY id DESC LIMIT ?''', (channel, limit))
     return [dict(row) for row in rows]

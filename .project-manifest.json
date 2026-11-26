@@ -368,6 +368,30 @@
       ]
     },
     {
+      "id": "deadline",
+      "name": "约定处理期限并隔离过时告警",
+      "entry": "POST /v1/channels/{channel}/messages",
+      "success": "过时投递留在死信且不再占用顺序键，普通告警继续前进",
+      "failure": "到点后迟来的确认返回 409 且不计为成功",
+      "verification": "python3 -m examples.walkthrough deadline",
+      "steps": [
+        "发布时用可选 deadline_seconds 约定处理期限，延迟不短于期限则发布即入死信",
+        "租约截止不晚于消息期限；到点仍有打开的租约时，该尝试按超过处理期限结束",
+        "过时投递留在死信可追查且不可重投，迟到的重复发布复用原回执，顺序键让位给后继"
+      ],
+      "module_ids": [
+        "publication",
+        "envelope",
+        "claims",
+        "expiry",
+        "outcomes",
+        "disposition",
+        "eligibility",
+        "deadletters",
+        "redrive"
+      ]
+    },
+    {
       "id": "board",
       "name": "定位积压原因",
       "entry": "GET /v1/channels/{channel}",

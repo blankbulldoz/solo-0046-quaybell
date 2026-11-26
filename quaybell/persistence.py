@@ -4,6 +4,14 @@ from pathlib import Path
 
 from .schema import SCHEMA, VERSION
 
+MIGRATIONS = {
+    1: '''
+ALTER TABLE messages ADD COLUMN deadline REAL;
+ALTER TABLE deliveries ADD COLUMN terminal_reason TEXT;
+CREATE INDEX IF NOT EXISTS message_deadline ON messages(deadline) WHERE deadline IS NOT NULL;
+''',
+}
+
 
 class RelayPersistence:
     def __init__(self, path):
@@ -11,10 +19,19 @@ class RelayPersistence:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in (0, VERSION):
+            if version > VERSION:
                 raise RuntimeError(f'无法打开存储版本 {version}')
             db.execute('PRAGMA journal_mode=WAL')
             db.executescript(f'BEGIN IMMEDIATE;\n{SCHEMA}\nPRAGMA user_version={VERSION};\nCOMMIT;')
+            # A fresh store already matches the current schema; older stores step forward.
+            if 0 < version < VERSION:
+                while version < VERSION:
+                    db.executescript(f'BEGIN IMMEDIATE;\n{MIGRATIONS[version]}\n'
+                                     f'PRAGMA user_version={version + 1};\nCOMMIT;')
+                    version += 1
+            # Created after migration so older stores gain the deadline column first.
+            db.execute('CREATE INDEX IF NOT EXISTS message_deadline ON messages(deadline) '
+                       'WHERE deadline IS NOT NULL')
 
     @contextmanager
     def _connection(self):

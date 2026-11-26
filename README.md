@@ -26,18 +26,26 @@ python3 -m quaybell --demo
 | `/channels/{channel}/groups` | POST | `name`、可选匹配 `tags` |
 | `/channels/{channel}/groups/{group}/pause` | POST | `paused` 为布尔值 |
 | `/channels/{channel}/preview` | POST | 用发布信封查询当前标签匹配结果 |
-| `/channels/{channel}/messages` | POST | `producer`、`key`、`lane`、`payload`、可选 `tags`、`delay_seconds` |
+| `/channels/{channel}/messages` | POST | `producer`、`key`、`lane`、`payload`、可选 `tags`、`delay_seconds`、`deadline_seconds` |
 | `/channels/{channel}/groups/{group}/claim` | POST | `worker`、可选 `limit`，返回含 `lease.token` 的领取项 |
 | `/deliveries/{id}/ack` | POST | `token` |
 | `/deliveries/{id}/nack` | POST | `token` 和 `reason` |
-| `/sweep` | POST | `{}` 或 `limit`，按原截止时间回收全局租约 |
+| `/sweep` | POST | `{}` 或 `limit`，按原截止时间回收全局租约与过期消息 |
 | `/channels/{channel}/dead` | GET | 最近 50 个失败投递及最后一次尝试 |
 | `/deliveries/{id}/redrive` | POST | `{}`，使用当前策略追加一个后继投递 |
 | `/messages/{id}` | GET | 信封、分发、尝试、消息级处理记录 |
 | `/messages/{id}/evidence` | GET | `quaybell-trace/1` JSON 下载，摘要针对除 `sha256` 之外的规范化内容 |
 | `/channels/{channel}/retention` | GET / POST | 候选复核，或以 `{}` / `limit` 清理实际合格项 |
 
-默认策略是 `lease_seconds=24`、`retry_seconds=3`、`max_attempts=3`、`retention_seconds=3600`。重发原生产键时复用初始匹配结果，内容变化则返回 409。如果应用侧副作用必须去重，应按消息和消费组身份设计处理键。重投需要按其业务语义明确将后继身份识别为有意重新处理。
+默认策略是 `lease_seconds=24`、`retry_seconds=3`、`max_attempts=3`、`retention_seconds=3600`。`deadline_seconds` 可选，表示从发布时刻起算的处理期限；不填则不限。重发原生产键时复用初始匹配结果，内容变化则返回 409。如果应用侧副作用必须去重，应按消息和消费组身份设计处理键。重投需要按其业务语义明确将后继身份识别为有意重新处理。
+
+### 处理期限
+
+- 发布时若延迟不短于期限，消息注定无法领取：发布即把各组分发写入死信，不进顺序键队首，原回执与信封保留供追查。
+- 租约不会越过消息期限：领取时租约截止取 `min(现在+租约秒数, 消息期限)`。
+- 到点时仍打开的租约按“超过处理期限”结束该尝试并转入死信，顺序键随即让位给后继；之后到达的确认或拒绝返回 409，回应中的 `accepted` 为 `false`，说明该应答未被计入成功，同一凭据重试读取同一结论。
+- 因期限进入死信的投递只供追查，不可重投；迟来的重复发布复用原回执，不复活死信、不追加分发。
+- 取件会先扫描并终止本组到期的分发；`/sweep` 另行处理全频道，返回 `stale`（期限终止）与 `recovered`（租约超时退避或死信）。
 
 以下载荷可发布到示例频道。默认延迟为零。
 
@@ -50,6 +58,7 @@ python3 -m quaybell --demo
 ```sh
 python3 -m compileall -q quaybell examples
 python3 -m examples.walkthrough claim
+python3 -m examples.walkthrough deadline
 python3 -m examples.walkthrough retention
 python3 -m examples.walkthrough export
 ```

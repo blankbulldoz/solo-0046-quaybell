@@ -4,7 +4,7 @@ from . import catalog, inputs, journal
 def eligible(db, channel, now, limit):
     catalog.get(db, channel)
     return [dict(row) for row in db.execute('''
-        SELECT m.id,m.published,m.policy,m.published+p.retention_seconds AS cutoff
+        SELECT m.id,m.published,m.policy,m.deadline,m.published+p.retention_seconds AS cutoff
         FROM messages m JOIN policies p ON p.channel=m.channel AND p.version=m.policy
         WHERE m.channel=? AND m.published+p.retention_seconds<=?
           AND NOT EXISTS(SELECT 1 FROM deliveries d WHERE d.message_id=m.id

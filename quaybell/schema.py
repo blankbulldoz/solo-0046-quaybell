@@ -1,4 +1,4 @@
-VERSION = 1
+VERSION = 2
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS channels (
   name TEXT PRIMARY KEY,
@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS messages (
   policy INTEGER NOT NULL,
   published REAL NOT NULL,
   available REAL NOT NULL,
+  deadline REAL,
   FOREIGN KEY(channel, policy) REFERENCES policies(channel, version),
   UNIQUE(channel, producer, dedup_key)
 );
@@ -47,6 +48,7 @@ CREATE TABLE IF NOT EXISTS deliveries (
   ready_at REAL NOT NULL,
   attempt_count INTEGER NOT NULL DEFAULT 0,
   terminal_at REAL,
+  terminal_reason TEXT,
   parent_id INTEGER UNIQUE REFERENCES deliveries(id)
 );
 CREATE TABLE IF NOT EXISTS attempts (

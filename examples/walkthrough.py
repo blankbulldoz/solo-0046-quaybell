@@ -199,6 +199,48 @@ def retention(client):
     return done
 
 
+def deadline(client):
+    client.channel(POLICY)
+    client.subscribe()
+    # 延迟比期限长：发布时就注定无法领取，直接留作可追查的死信，不占顺序键。
+    late = client.publish('left-behind', delay_seconds=9, deadline_seconds=5)
+    dead = client.request(CHANNEL + '/dead')['items']
+    assert late['deadline'] == client.clock[0] + 5
+    assert [row['id'] for row in dead] == [late['fanout']['oscillator']]
+    assert dead[0]['last_attempt'] is None and dead[0]['terminal_reason'] == '超过处理期限'
+    client.request(f"/deliveries/{dead[0]['id']}/redrive", {}, 409)
+
+    # 租约时限比消息期限长：领取时租约被截到消息期限，不能越过期限继续占用。
+    head = client.publish('deadline-head', deadline_seconds=2)
+    alert = client.publish('following-alert')
+    taken = client.claim()[0]
+    assert taken['message_id'] == head['message_id']
+    assert taken['lease']['expires'] == taken['deadline'] == client.clock[0] + 2
+    client.tick(1)
+    assert client.claim() == []
+    client.tick(1)
+
+    # 到点时仍有打开的租约：该尝试以“超过处理期限”结束，队首让位给普通告警。
+    advanced = client.claim()[0]
+    assert advanced['message_id'] == alert['message_id']
+    late_ack = client.settle(taken, expected=409)
+    assert late_ack['accepted'] is False and late_ack['state'] == 'dead'
+    assert late_ack['outcome'] == 'expired' and late_ack['reason'] == '超过处理期限'
+    assert client.settle(taken, expected=409) == late_ack | {'repeated': True}
+
+    # 迟来的重复发布复用原回执，不复活死信，也不新增分发。
+    again = client.publish('left-behind', delay_seconds=9, deadline_seconds=5, expected=200)
+    assert again['repeated'] and again['message_id'] == late['message_id']
+    assert again['fanout'] == late['fanout']
+    client.publish('left-behind', delay_seconds=9, deadline_seconds=6, expected=409)
+
+    client.settle(advanced)
+    trace = client.request(f"/messages/{head['message_id']}")
+    assert [a['outcome'] for a in trace['deliveries'][0]['attempts']] == ['expired']
+    return {'dead': late['message_id'], 'expired_lease': taken['lease']['expires'],
+            'advanced': advanced['message_id'], 'late_ack': late_ack['accepted']}
+
+
 def export(client):
     facts = inspect(client)
     record = client.request(f"/messages/{facts['message']['id']}/evidence")
@@ -209,7 +251,7 @@ def export(client):
 
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             redrive=redrive, board=board, retention=retention, deadline=deadline, export=export)
 
 
 def main():

@@ -6,13 +6,19 @@ from .errors import conflict
 PUBLIC = 'id,delivery_id,number,worker,started,expires,outcome,finished,reason'
 
 
-def open_attempt(db, delivery, worker, now, seconds):
+def open_attempt(db, delivery, worker, now, expires):
     token = secrets.token_urlsafe(24)
     number = delivery['attempt_count'] + 1
     key = db.execute('''INSERT INTO attempts(delivery_id,number,token_digest,worker,started,expires,outcome)
                         VALUES (?,?,?,?,?,?,'open')''',
-                     (delivery['id'], number, codec.fingerprint(token), worker, now, now + seconds)).lastrowid
-    return dict(id=key, token=token, number=number, expires=now + seconds)
+                     (delivery['id'], number, codec.fingerprint(token), worker, now, expires)).lastrowid
+    return dict(id=key, token=token, number=number, expires=expires)
+
+
+def open_for(db, delivery_id):
+    row = db.execute("SELECT * FROM attempts WHERE delivery_id=? AND outcome='open'",
+                     (delivery_id,)).fetchone()
+    return dict(row) if row else None
 
 
 def by_token(db, delivery_id, token):

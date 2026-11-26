@@ -17,5 +17,6 @@ def list_recent(db, channel, limit=50):
     for row in rows:
         child = db.execute('SELECT id FROM deliveries WHERE parent_id=?', (row['id'],)).fetchone()
         history = attempts.for_delivery(db, row['id'])
-        result.append(dict(row) | {'last_attempt': history[-1], 'redriven_as': child['id'] if child else None})
+        result.append(dict(row) | {'last_attempt': history[-1] if history else None,
+                                   'redriven_as': child['id'] if child else None})
     return result

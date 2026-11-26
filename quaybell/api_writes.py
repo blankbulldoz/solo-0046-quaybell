@@ -17,7 +17,8 @@ def write(db, action, args, raw, now):
     if action == 'claim':
         return Reply(claims.claim(db, *args, raw, now))
     if action in ('ack', 'nack'):
-        return Reply(disposition.settle(db, int(args[0]), raw, now, action + 'ed'))
+        item, status = disposition.settle(db, int(args[0]), raw, now, action + 'ed')
+        return Reply(item, status)
     if action == 'sweep':
         return Reply(expiry.sweep(db, raw, now))
     if action == 'redrive':

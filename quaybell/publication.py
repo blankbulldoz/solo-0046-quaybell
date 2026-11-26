@@ -1,4 +1,4 @@
-from . import catalog, codec, delivery, journal, policy, routing
+from . import catalog, codec, delivery, expiry, journal, policy, routing
 from .envelope import Envelope
 from .errors import conflict, missing
 
@@ -13,6 +13,7 @@ def get(db, message_id):
 def receipt(db, message, repeated):
     original = [item for item in delivery.for_message(db, message['id']) if item['parent_id'] is None]
     return dict(message_id=message['id'], policy=message['policy'], repeated=repeated,
+                deadline=message['deadline'],
                 fanout={item['group_name']: item['id'] for item in original})
 
 
@@ -29,12 +30,24 @@ def publish(db, channel, raw, now):
         return receipt(db, existing, True)
     active = policy.read(db, channel)
     ready_at = now + envelope.delay_seconds
-    key = db.execute('''INSERT INTO messages(channel,producer,dedup_key,lane,envelope,fingerprint,policy,published,available)
-                        VALUES (?,?,?,?,?,?,?,?,?)''',
+    deadline = None if envelope.deadline_seconds is None else now + envelope.deadline_seconds
+    key = db.execute('''INSERT INTO messages(channel,producer,dedup_key,lane,envelope,fingerprint,policy,
+                                             published,available,deadline)
+                        VALUES (?,?,?,?,?,?,?,?,?,?)''',
                      (channel, envelope.producer, envelope.dedup_key, envelope.lane, encoded, digest,
-                      active['version'], now, ready_at)).lastrowid
+                      active['version'], now, ready_at, deadline)).lastrowid
+    # A delivery that cannot become ready before the deadline is never claimable;
+    # settle it in the dead letters now so it does not hold up its order key.
+    undeliverable = deadline is not None and deadline <= ready_at
     fanout = {}
     for group in routing.matching(db, channel, envelope.tags):
-        fanout[group['name']] = delivery.add(db, key, group['id'], envelope.lane, active['version'], ready_at)
-    journal.append(db, channel, now, 'published', {'fanout': fanout, 'policy': active['version']}, key)
-    return dict(message_id=key, policy=active['version'], repeated=False, fanout=fanout)
+        fanout[group['name']] = delivery.add(db, key, group['id'], envelope.lane,
+                                             active['version'], ready_at)
+    journal.append(db, channel, now, 'published',
+                   {'fanout': fanout, 'policy': active['version'], 'deadline': deadline,
+                    'ready_at': ready_at}, key)
+    if undeliverable:
+        for delivery_id in fanout.values():
+            expiry.terminate(db, delivery.get(db, delivery_id), now)
+    return dict(message_id=key, policy=active['version'], repeated=False,
+                deadline=deadline, fanout=fanout)

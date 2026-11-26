@@ -70,14 +70,15 @@ function render() {
     form.dataset.stamp = stamp;
   }
   $('queue-group').textContent = selected?.name ?? '';
-  $('stats').replaceChildren(...['ready','leased','blocked','delayed','paused','expired'].map(key => {
+  $('stats').replaceChildren(...['ready','leased','blocked','delayed','paused','expired','stale'].map(key => {
     const card = node('div', '', 'stat');
     card.dataset.state = key;
     card.append(node('strong', selected?.counts[key] ?? 0), node('span', TEXT[key], 'muted'));
     return card;
   }));
   rows('queue-rows', (selected?.sample || []).map(item => [traceLink(item.message_id, `#${item.id}`),
-    item.lane, status(item.cause), `#${item.head_id}`, clock(item.ready_at)]), 5,
+    item.lane, status(item.cause), `#${item.head_id}`, clock(item.ready_at),
+    item.deadline ? `${clock(item.deadline)}（${item.cause === 'stale' ? '已过期' : '处理后转死信'}）` : '—']), 6,
     selected ? '当前消费组没有未完成投递' : '请选择已有消费组');
   const messages = board?.messages || [];
   $('message-total').textContent = messages.length ? `最近 ${messages.length} 条` : '';
@@ -86,7 +87,9 @@ function render() {
   const dead = board?.dead || [];
   $('dead-total').textContent = dead.length ? `最近 ${dead.length} 条` : '';
   rows('dead-rows', dead.map(item => [traceLink(item.message_id, `#${item.id}`), item.group_name,
-    item.last_attempt.reason, item.redriven_as ? `已追加 #${item.redriven_as}` :
+    item.terminal_reason === '超过处理期限' ? '超过处理期限' :
+      (item.last_attempt?.reason ?? item.terminal_reason ?? '—'),
+    item.redriven_as ? `已追加 #${item.redriven_as}` :
       button('重投', async () => {
         const result = await api(`/deliveries/${item.id}/redrive`, {});
         notice(`重投记录 #${result.delivery_id}`);
@@ -161,10 +164,13 @@ onForm('create-group', async ({name, tags}) => {
 });
 onForm('publish', async (values, mode) => {
   const channel = state.channel;
-  const reply = await api(`${channelPath()}/${mode || 'messages'}`, {
-    ...values, tags: parse(values.tags, '标签'), payload: parse(values.payload, '载荷'),
+  const payload = {
+    producer: values.producer, key: values.key, lane: values.lane,
+    tags: parse(values.tags, '标签'), payload: parse(values.payload, '载荷'),
     delay_seconds: Number(values.delay_seconds),
-  });
+  };
+  if (values.deadline_seconds !== '') payload.deadline_seconds = Number(values.deadline_seconds);
+  const reply = await api(`${channelPath()}/${mode || 'messages'}`, payload);
   if (state.channel !== channel) return;
   $('publication-result').textContent = mode === 'preview'
     ? (reply.groups.length ? `匹配：${reply.groups.join('、')}` : '当前无匹配消费组')

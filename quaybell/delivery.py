@@ -1,6 +1,6 @@
 from .errors import missing
 
-DELIVERY = '''SELECT d.*,m.channel,s.name AS group_name FROM deliveries d
+DELIVERY = '''SELECT d.*,m.channel,m.deadline,s.name AS group_name FROM deliveries d
               JOIN messages m ON m.id=d.message_id JOIN subscriptions s ON s.id=d.subscription_id'''
 
 
@@ -26,8 +26,13 @@ def lease(db, key, number):
     db.execute("UPDATE deliveries SET state='leased',attempt_count=? WHERE id=?", (number, key))
 
 
-def close(db, key, state, when):
+def stale(item, now):
+    return item['deadline'] is not None and item['deadline'] <= now
+
+
+def close(db, key, state, when, terminal_reason=None):
     if state == 'waiting':
         db.execute('UPDATE deliveries SET state=?,ready_at=? WHERE id=?', (state, when, key))
     else:
-        db.execute('UPDATE deliveries SET state=?,terminal_at=? WHERE id=?', (state, when, key))
+        db.execute('UPDATE deliveries SET state=?,terminal_at=?,terminal_reason=? WHERE id=?',
+                   (state, when, terminal_reason, key))

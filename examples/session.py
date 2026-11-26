@@ -48,6 +48,9 @@ class Session:
     def claim(self, limit=1, worker='bench-worker'):
         return self.request(GROUP + '/claim', {'worker': worker, 'limit': limit})['items']
 
+    def sweep(self, limit=100):
+        return self.request('/sweep', {'limit': limit})
+
     def settle(self, item, mode='ack', expected=200):
         data = {'token': item['lease']['token']}
         if mode == 'nack':
