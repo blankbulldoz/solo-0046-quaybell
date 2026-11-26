@@ -110,10 +110,13 @@ function renderLeases() {
       if (action === 'nack') data.reason = reason.value;
       const result = await api(`/deliveries/${item.delivery_id}/${action}`, data);
       state.leases.delete(item.delivery_id);
-      notice(`投递 #${item.delivery_id}：${TEXT[result.state]}`);
+      notice(action === 'release'
+        ? `投递 #${item.delivery_id}：已让回，最早 ${clock(result.effective_at)} 可重领`
+        : `投递 #${item.delivery_id}：${TEXT[result.state]}`);
       await refresh();
     };
     actions.append(button('确认', settle('ack')), button('拒绝', settle('nack'), {className: 'danger'}),
+      button('让回', settle('release')),
       button('移除卡片', () => { state.leases.delete(item.delivery_id); renderLeases(); }));
     card.append(node('p', `投递 #${item.delivery_id} · 第 ${item.lease.number} 次`, 'mono'),
       node('p', `租约截止 ${clock(item.lease.expires)}`, 'muted'), reason, actions);

@@ -207,9 +207,102 @@ def export(client):
     return {'format': record['format'], 'sha256': digest}
 
 
+def release(client):
+    client.channel()
+    client.subscribe()
+
+    # 场景一：只剩一次失败预算的分发被反复让回，让回不消耗失败预算。
+    budget_msg = client.publish('budget-key', 'coil-north')
+    first = client.claim()[0]
+    failed = client.settle(first, 'nack')
+    assert failed['state'] == 'waiting'
+    client.tick(3)
+    held = client.claim()[0]
+    assert held['lease']['number'] == 2  # 再失败一次就会进死信
+
+    sent_at = client.clock[0]
+    ticket = client.release(held)
+    assert ticket['outcome'] == 'released' and ticket['state'] == 'waiting'
+    assert ticket['effective_at'] == ticket['ready_at'] == sent_at + 3
+    assert ticket['retry_after'] == 3
+    assert (ticket['failures'], ticket['max_attempts'], ticket['remaining_failures']) == (1, 2, 1)
+    # 相同让回请求重试读取同一记录
+    assert client.release(held) == ticket | {'repeated': True}
+    # 冷却期内不能立刻再领，避免连续空转
+    assert client.claim() == []
+
+    # 反复“让回 -> 冷却 -> 再领”，剩余失败预算始终是一次
+    generations = [held['lease']['number']]
+    current = held
+    for worker in ('standby-worker', 'bench-worker'):
+        client.tick(3)
+        current = client.claim(worker=worker)[0]
+        generations.append(current['lease']['number'])
+        now = client.clock[0]
+        again = client.release(current)
+        assert again['effective_at'] == now + 3
+        assert (again['failures'], again['remaining_failures']) == (1, 1)
+        assert client.claim() == []
+    assert generations == [2, 3, 4]
+
+    # 预算是真实的：保留的最后一次失败仍会把投递送入死信
+    client.tick(3)
+    last = client.claim()[0]
+    assert last['lease']['number'] == 5
+    assert client.settle(last, 'nack')['state'] == 'dead'
+
+    trace = client.request(f"/messages/{budget_msg['message_id']}")
+    delivery = next(row for row in trace['deliveries'] if row['id'] == held['delivery_id'])
+    outcomes_seq = [attempt['outcome'] for attempt in delivery['attempts']]
+    assert outcomes_seq == ['nacked', 'released', 'released', 'released', 'nacked'], outcomes_seq
+    released_rows = [attempt for attempt in delivery['attempts'] if attempt['outcome'] == 'released']
+    assert {attempt['worker'] for attempt in released_rows} == {'bench-worker', 'standby-worker'}
+    assert all(attempt['finished'] is not None for attempt in released_rows)
+    assert [event['kind'] for event in trace['events']].count('released') == 3
+    assert held['lease']['token'] not in pack(trace)
+
+    # 场景二：让回的同键队首在冷却期仍挡住后继，重新领取并确认后后继才推进。
+    head_msg = client.publish('head-key', 'coil-east')
+    tail_msg = client.publish('tail-key', 'coil-east')
+    picked = client.claim(10)
+    assert [item['message_id'] for item in picked] == [head_msg['message_id']]
+    head = picked[0]
+    client.release(head)
+    assert client.claim(10) == []  # 队首冷却中，同键后继不得超越
+    client.tick(3)
+    reclaimed = client.claim(10)[0]
+    assert reclaimed['delivery_id'] == head['delivery_id']
+    client.settle(reclaimed)
+    successor = client.claim(10)[0]
+    assert successor['message_id'] == tail_msg['message_id']
+    client.settle(successor)
+
+    # 场景三：过期后才到达的让回请求被拒绝，处置仍走原截止时间的超时规则。
+    late_msg = client.publish('late-key', 'coil-west')
+    leased = client.claim()[0]
+    expires = leased['lease']['expires']
+    client.tick(5)  # 租约 4 秒，此刻已过期
+    denied = client.release(leased, expected=409)
+    assert denied['error'] == 'conflict'
+    client.tick(2)  # 到达 expires + retry_seconds
+    swept = client.request('/sweep', {'limit': 10})
+    record = next(row for row in swept['recovered'] if row['delivery_id'] == leased['delivery_id'])
+    assert record['outcome'] == 'expired' and record['effective_at'] == expires + 3
+    replacement = client.claim()[0]
+    assert replacement['delivery_id'] == leased['delivery_id']
+    assert replacement['lease']['number'] == 2
+    client.settle(replacement)
+    late_trace = client.request(f"/messages/{late_msg['message_id']}")
+    late_delivery = next(row for row in late_trace['deliveries'] if row['id'] == leased['delivery_id'])
+    assert [attempt['outcome'] for attempt in late_delivery['attempts']] == ['expired', 'acked']
+    return {'released_attempts': len(released_rows), 'reclaim_generations': generations,
+            'reclaim_delay_seconds': 3, 'late_release_status': 409}
+
+
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
-             inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep,
+             dead=dead, redrive=redrive, board=board, retention=retention, export=export,
+             release=release)
 
 
 def main():

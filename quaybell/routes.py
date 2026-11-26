@@ -15,6 +15,8 @@ PATTERNS = {
         (CHANNEL + '/groups', 'subscribe'), (GROUP + '/pause', 'pause'),
         (CHANNEL + '/preview', 'preview'), (CHANNEL + '/messages', 'publish'),
         (GROUP + '/claim', 'claim'), (DELIVERY + '/ack', 'ack'), (DELIVERY + '/nack', 'nack'),
+        (DELIVERY + '/release', 'release'), (DELIVERY + '/return', 'release'),
+        (DELIVERY + '/yield', 'release'),
         ('/v1/sweep', 'sweep'), (DELIVERY + '/redrive', 'redrive'), (CHANNEL + '/retention', 'prune'),
     ),
 }

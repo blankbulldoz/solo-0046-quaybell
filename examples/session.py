@@ -54,6 +54,12 @@ class Session:
             data['reason'] = '下游拒绝校验帧'
         return self.request(f"/deliveries/{item['delivery_id']}/{mode}", data, expected)
 
+    def release(self, item, expected=200, reason=None):
+        data = {'token': item['lease']['token']}
+        if reason is not None:
+            data['reason'] = reason
+        return self.request(f"/deliveries/{item['delivery_id']}/release", data, expected)
+
 
 def envelope(key='signal-1', lane='coil-north', **extra):
     return dict(producer='signal-source', key=key, lane=lane, payload={'value': 18},

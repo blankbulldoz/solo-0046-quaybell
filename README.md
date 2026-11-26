@@ -30,6 +30,7 @@ python3 -m quaybell --demo
 | `/channels/{channel}/groups/{group}/claim` | POST | `worker`、可选 `limit`，返回含 `lease.token` 的领取项 |
 | `/deliveries/{id}/ack` | POST | `token` |
 | `/deliveries/{id}/nack` | POST | `token` 和 `reason` |
+| `/deliveries/{id}/release` | POST | `token`，可选 `reason`，在租约内主动让回 |
 | `/sweep` | POST | `{}` 或 `limit`，按原截止时间回收全局租约 |
 | `/channels/{channel}/dead` | GET | 最近 50 个失败投递及最后一次尝试 |
 | `/deliveries/{id}/redrive` | POST | `{}`，使用当前策略追加一个后继投递 |
@@ -38,6 +39,8 @@ python3 -m quaybell --demo
 | `/channels/{channel}/retention` | GET / POST | 候选复核，或以 `{}` / `limit` 清理实际合格项 |
 
 默认策略是 `lease_seconds=24`、`retry_seconds=3`、`max_attempts=3`、`retention_seconds=3600`。重发原生产键时复用初始匹配结果，内容变化则返回 409。如果应用侧副作用必须去重，应按消息和消费组身份设计处理键。重投需要按其业务语义明确将后继身份识别为有意重新处理。
+
+消费者判断自己来不及在租约内启动处理时，可调用 `/deliveries/{id}/release` 凭原凭据主动让回，不必报一次失败。该次尝试记为 `released`，领取的 `worker`、起止时刻和可选备注都保留在尝试历史与消息事件里。让回后投递回到 `waiting`，**最早可重领时刻 = 让回处置时间 + 该投递绑定策略的 `retry_seconds`**：固定使用初始退避秒数，不按失败次数指数增长；冷却期内立即取件为空，避免“领取—让回”连续空转，同顺序键的后继也仍被队首挡住。让回不消耗 `max_attempts` 失败预算，只有 `nack` 和租约超时计为实际失败，响应中的 `failures`、`remaining_failures` 可核对剩余预算。相同让回请求用同一 `token` 重试时读取已记录回执。凭据在租约到期时刻失效：到期后才到达的让回返回 409 且不写 `released`，之后回收仍按原租约截止时间计算超时退避。
 
 以下载荷可发布到示例频道。默认延迟为零。
 
@@ -50,6 +53,7 @@ python3 -m quaybell --demo
 ```sh
 python3 -m compileall -q quaybell examples
 python3 -m examples.walkthrough claim
+python3 -m examples.walkthrough release
 python3 -m examples.walkthrough retention
 python3 -m examples.walkthrough export
 ```
