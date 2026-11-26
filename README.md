@@ -33,11 +33,14 @@ python3 -m quaybell --demo
 | `/sweep` | POST | `{}` 或 `limit`，按原截止时间回收全局租约 |
 | `/channels/{channel}/dead` | GET | 最近 50 个失败投递及最后一次尝试 |
 | `/deliveries/{id}/redrive` | POST | `{}`，使用当前策略追加一个后继投递 |
+| `/deliveries/{id}/relay` | POST | `{channel}`，把死信转运到指定修复频道 |
 | `/messages/{id}` | GET | 信封、分发、尝试、消息级处理记录 |
 | `/messages/{id}/evidence` | GET | `quaybell-trace/1` JSON 下载，摘要针对除 `sha256` 之外的规范化内容 |
 | `/channels/{channel}/retention` | GET / POST | 候选复核，或以 `{}` / `limit` 清理实际合格项 |
 
 默认策略是 `lease_seconds=24`、`retry_seconds=3`、`max_attempts=3`、`retention_seconds=3600`。重发原生产键时复用初始匹配结果，内容变化则返回 409。如果应用侧副作用必须去重，应按消息和消费组身份设计处理键。重投需要按其业务语义明确将后继身份识别为有意重新处理。
+
+转运面向跨频道的修复场景：只有死信投递可以转运，值守人员在请求中给出修复频道，中继在该频道发布一条新消息，复用原生产者、生产键、顺序键、标签和载荷，并附加 `x-quaybell-origin-channel`、`x-quaybell-origin-message`、`x-quaybell-origin-delivery` 三个溯源标签；原标签若占用这些键会被拒绝。每个死信只对应一个转运承诺，重复请求（例如回执丢失后重试或两名操作者同时转运）返回同一目标消息，`repeated` 为真；改派到其他频道返回 409。目标消息的轨迹和证据包含来源频道、源投递、末次尝试和失败原因，源频道保留死信、尝试与 `relayed` 事件用于复盘。修复频道当时若没有消费组，目标消息不生成分发，之后加入的消费组只作用于后续转运消息。
 
 以下载荷可发布到示例频道。默认延迟为零。
 
@@ -52,6 +55,7 @@ python3 -m compileall -q quaybell examples
 python3 -m examples.walkthrough claim
 python3 -m examples.walkthrough retention
 python3 -m examples.walkthrough export
+python3 -m examples.walkthrough transfer
 ```
 
 每个工作流示例使用临时 SQLite 文件、受控时钟和本机随机端口，运行完即释放。可用 `python3 -m examples.walkthrough --help` 列出所有工作流。正式测试套件延后建设。

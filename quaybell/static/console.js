@@ -85,14 +85,35 @@ function render() {
     `v${item.policy}`, clock(item.published)]), 5, '当前频道没有消息');
   const dead = board?.dead || [];
   $('dead-total').textContent = dead.length ? `最近 ${dead.length} 条` : '';
-  rows('dead-rows', dead.map(item => [traceLink(item.message_id, `#${item.id}`), item.group_name,
-    item.last_attempt.reason, item.redriven_as ? `已追加 #${item.redriven_as}` :
+  rows('dead-rows', dead.map(item => {
+    const redriveCell = item.redriven_as ? `已追加 #${item.redriven_as}` :
       button('重投', async () => {
         const result = await api(`/deliveries/${item.id}/redrive`, {});
         notice(`重投记录 #${result.delivery_id}`);
         resetRetention();
         await refresh();
-      })]), 4, '当前频道没有死信');
+      });
+    let relayCell;
+    if (item.relayed_to) {
+      relayCell = node('span', `已转运到 ${item.relayed_to.channel} · `);
+      relayCell.append(traceLink(item.relayed_to.message_id,
+        `消息 #${item.relayed_to.message_id}`));
+    } else {
+      const target = node('input');
+      target.placeholder = '修复频道名';
+      target.setAttribute('aria-label', `投递 ${item.id} 的修复频道名`);
+      relayCell = node('span', '', 'relay-control');
+      relayCell.append(target, button('转运', async () => {
+        const channel = target.value.trim();
+        const result = await api(`/deliveries/${item.id}/relay`, {channel});
+        notice(`${result.repeated ? '已取回既有转运承诺' : '已转运'}：${result.target_channel} 消息 #${result.target_message_id}`);
+        resetRetention();
+        await refresh();
+      }));
+    }
+    return [traceLink(item.message_id, `#${item.id}`), item.group_name,
+      item.last_attempt.reason, redriveCell, relayCell];
+  }), 5, '当前频道没有死信');
   renderLeases();
 }
 
@@ -127,10 +148,20 @@ async function trace(id) {
   const m = facts.message;
   $('trace-meta').textContent = `${m.channel} · ${m.producer}/${m.dedup_key} · v${m.policy} · ${clock(m.published)}`;
   $('trace-envelope').textContent = JSON.stringify(m.envelope, null, 2);
+  $('trace-origin').hidden = !facts.origin;
+  $('trace-origin').replaceChildren();
+  if (facts.origin) {
+    const link = traceLink(facts.origin.target_message_id,
+      `本频道消息 #${facts.origin.target_message_id}`);
+    $('trace-origin').append(node('span',
+      `转运自 ${facts.origin.source_channel} 的死信投递 #${facts.origin.source_id} · 原因：${facts.origin.reason} · `),
+      link);
+  }
   $('trace-deliveries').replaceChildren(...facts.deliveries.map(item => {
     const section = node('section');
     const label = node('h4', `#${item.id} · ${item.group_name} · v${item.policy} `);
     if (item.parent_id) label.append(`· 源投递 #${item.parent_id} `);
+    if (item.relay) label.append(`· 已转运至 ${item.relay.target_channel} 消息 #${item.relay.target_message_id} `);
     label.append(status(item.state));
     const entries = node('ul', '', 'trace-attempts');
     entries.append(...item.attempts.map(a => node('li',

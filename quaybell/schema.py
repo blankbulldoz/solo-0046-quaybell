@@ -77,5 +77,17 @@ CREATE INDEX IF NOT EXISTS delivery_origin ON deliveries(message_id,id);
 CREATE INDEX IF NOT EXISTS attempt_deadline ON attempts(expires,id) WHERE outcome='open';
 CREATE UNIQUE INDEX IF NOT EXISTS one_open_attempt ON attempts(delivery_id) WHERE outcome='open';
 CREATE INDEX IF NOT EXISTS message_channel ON messages(channel,published,id);
+CREATE TABLE IF NOT EXISTS relays (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_delivery_id INTEGER UNIQUE REFERENCES deliveries(id) ON DELETE SET NULL,
+  source_message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
+  source_channel TEXT NOT NULL,
+  target_channel TEXT NOT NULL REFERENCES channels(name),
+  target_message_id INTEGER NOT NULL UNIQUE REFERENCES messages(id) ON DELETE CASCADE,
+  reason TEXT NOT NULL,
+  provenance TEXT NOT NULL,
+  created REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS relay_target ON relays(target_channel,target_message_id);
 CREATE INDEX IF NOT EXISTS journal_message ON journal(message_id,id);
 '''

@@ -1,4 +1,4 @@
-from . import catalog, claims, disposition, expiry, inputs, publication, redrive, retention, subscriptions
+from . import catalog, claims, disposition, expiry, inputs, publication, redrive, relay, retention, subscriptions
 from .protocol import Reply
 
 
@@ -23,6 +23,9 @@ def write(db, action, args, raw, now):
     if action == 'redrive':
         inputs.require(raw, ())
         item = redrive.redrive(db, int(args[0]), now)
+        return Reply(item, 200 if item['repeated'] else 201)
+    if action == 'relay':
+        item = relay.relay(db, int(args[0]), raw, now)
         return Reply(item, 200 if item['repeated'] else 201)
     if action == 'prune':
         return Reply(retention.prune(db, *args, raw, now))

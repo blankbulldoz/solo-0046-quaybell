@@ -1,6 +1,7 @@
 """Run one bounded middleware workflow through the public HTTP listener."""
 import argparse
 import logging
+from threading import Barrier, Thread
 
 from quaybell.codec import fingerprint, pack
 
@@ -207,9 +208,109 @@ def export(client):
     return {'format': record['format'], 'sha256': digest}
 
 
+def _kill(client, channel, group, reason):
+    item = client.claim_in(channel, group)[0]
+    client.request(f"/deliveries/{item['delivery_id']}/nack", {'token': item['lease']['token'],
+                                                                'reason': reason})
+    return item['delivery_id']
+
+
+def transfer(client):
+    client.channel(POLICY | {'max_attempts': 1})
+    client.subscribe('oscillator')
+    client.subscribe('witness')
+    first_msg = client.publish()
+    first_fanout = first_msg['fanout']
+    first_dead_id = _kill(client, 'wire-gate', 'oscillator', '下游拒绝校验帧')
+    witness_item = client.claim_in('wire-gate', 'witness')[0]
+    client.settle(witness_item)
+    dead_rows = client.request(CHANNEL + '/dead')['items']
+    assert [row['id'] for row in dead_rows] == [first_dead_id]
+    source_dead = dead_rows[0]
+    reason = source_dead['last_attempt']['reason']
+    repair_channel = 'repair-bay'
+    client.relay(source_dead['id'], 'missing-bay', expected=404)
+    client.make_channel(repair_channel)
+    client.request(f"/deliveries/{first_fanout['witness']}/relay", {'channel': repair_channel}, 409)
+    first = client.relay(source_dead['id'], repair_channel, expected=201)
+    target_id = first['target_message_id']
+    assert first['fanout'] == {} and first['reason'] == reason
+    client.relay(source_dead['id'], 'other-bay', expected=404)
+    client.make_channel('other-bay')
+    client.relay(source_dead['id'], 'other-bay', expected=409)
+    target = client.request(f'/messages/{target_id}')
+    origin = target['origin']
+    assert origin['source_id'] == first_dead_id
+    assert origin['source_channel'] == 'wire-gate' and origin['reason'] == reason
+    assert origin['provenance']['source_attempt'] == source_dead['last_attempt']['number']
+    origin_tags = target['message']['envelope']['tags']
+    assert origin_tags['x-quaybell-origin-delivery'] == str(first_dead_id)
+    source_trace = client.request(f"/messages/{first_msg['message_id']}")
+    relayed = [event for event in source_trace['events'] if event['kind'] == 'relayed']
+    assert relayed and relayed[0]['details']['target_message_id'] == target_id
+    replay = client.relay(source_dead['id'], repair_channel)
+    assert replay == first | {'repeated': True}
+    barrier = Barrier(2)
+    replies, statuses = [], []
+
+    def operator():
+        barrier.wait()
+        status, body = client.post_raw(f"/deliveries/{source_dead['id']}/relay",
+                                       {'channel': repair_channel})
+        statuses.append(status)
+        replies.append(body)
+
+    threads = [Thread(target=operator) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert set(statuses) == {200}
+    assert all(item['repeated'] and item['target_message_id'] == target_id for item in replies)
+    second_msg = client.publish('signal-2')
+    second_fanout = second_msg['fanout']
+    second_dead_id = _kill(client, 'wire-gate', 'oscillator', '帧序号回退')
+    other_dead_id = _kill(client, 'wire-gate', 'witness', '校验和不符')
+    assert {row['id'] for row in client.request(CHANNEL + '/dead')['items']} == {
+        first_dead_id, second_dead_id, other_dead_id}
+    client.make_group(repair_channel, 'healer-a')
+    client.make_group(repair_channel, 'healer-b')
+    selected = client.relay(second_dead_id, repair_channel, expected=201)
+    second_target = selected['target_message_id']
+    assert set(selected['fanout']) == {'healer-a', 'healer-b'}
+    client.request(f"/deliveries/{other_dead_id}/relay", {'channel': repair_channel}, 409)
+    claimed = client.claim_in(repair_channel, 'healer-a') + client.claim_in(repair_channel, 'healer-b')
+    assert {item['delivery_id'] for item in claimed} == set(selected['fanout'].values())
+    assert all(item['message_id'] == second_target for item in claimed)
+    for item in claimed:
+        client.settle(item)
+    board = client.request(f'/channels/{repair_channel}')
+    assert sorted(item['id'] for item in board['messages']) == sorted((target_id, second_target))
+    source_evidence = client.request(f"/messages/{first_msg['message_id']}/evidence")
+    assert source_evidence['trace']['relays'][0]['target_message_id'] == target_id
+    target_evidence = client.request(f'/messages/{target_id}/evidence')
+    assert target_evidence['trace']['origin']['source_id'] == first_dead_id
+    second_evidence = client.request(f'/messages/{second_target}/evidence')
+    assert second_evidence['trace']['origin']['reason'] == '帧序号回退'
+    client.tick(11)
+    plan = client.request(CHANNEL + '/retention')
+    assert [row['id'] for row in plan['eligible']] == [first_msg['message_id'], second_msg['message_id']]
+    client.request(CHANNEL + '/retention', {})
+    client.request(f"/messages/{first_msg['message_id']}", expected=404)
+    client.request(f"/deliveries/{first_dead_id}/relay", {'channel': repair_channel}, 404)
+    surviving = client.request(f'/messages/{target_id}')
+    assert surviving['origin']['source_id'] == first_dead_id
+    assert surviving['origin']['provenance']['source_message_id'] == first_msg['message_id']
+    return {'target_message_id': target_id, 'second_target_message_id': second_target,
+            'zero_subscriber_fanout': first['fanout'], 'repair_fanout': selected['fanout'],
+            'duplicate_statuses': sorted(set(statuses)),
+            'source_sha256': source_evidence['sha256'],
+            'target_sha256': target_evidence['sha256']}
+
+
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             redrive=redrive, board=board, retention=retention, export=export, transfer=transfer)
 
 
 def main():

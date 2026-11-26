@@ -13,7 +13,6 @@ CHANNEL = '/channels/wire-gate'
 GROUP = CHANNEL + '/groups/oscillator'
 POLICY = dict(lease_seconds=4, retry_seconds=3, max_attempts=2, retention_seconds=11)
 
-
 class Session:
     def __init__(self, server, clock):
         self.base = f'http://127.0.0.1:{server.server_port}/v1'
@@ -53,6 +52,29 @@ class Session:
         if mode == 'nack':
             data['reason'] = '下游拒绝校验帧'
         return self.request(f"/deliveries/{item['delivery_id']}/{mode}", data, expected)
+
+    def make_channel(self, name, policy=None):
+        return self.request('/channels', {'name': name, 'policy': policy or POLICY}, 201)
+
+    def make_group(self, channel, name, tags=None):
+        return self.request(f'/channels/{channel}/groups', {'name': name, 'tags': tags or {}}, 201)
+
+    def claim_in(self, channel, group, limit=1, worker='bench-worker'):
+        return self.request(f'/channels/{channel}/groups/{group}/claim',
+                            {'worker': worker, 'limit': limit})['items']
+
+    def relay(self, delivery_id, channel, expected=200):
+        return self.request(f'/deliveries/{delivery_id}/relay', {'channel': channel}, expected)
+
+    def post_raw(self, path, data):
+        req = Request(self.base + path, data=json.dumps(data).encode('utf-8'),
+                      headers={'Content-Type': 'application/json'})
+        try:
+            response = urlopen(req, timeout=5)
+        except HTTPError as exc:
+            response = exc
+        with response:
+            return response.code, json.load(response)
 
 
 def envelope(key='signal-1', lane='coil-north', **extra):

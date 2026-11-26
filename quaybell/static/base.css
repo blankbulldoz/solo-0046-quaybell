@@ -116,6 +116,8 @@ input, textarea { width: 100%; min-width: 0; border: 1px solid #c9d5cb; border-r
 textarea { resize: vertical; font-family: ui-monospace, monospace; }
 output { white-space: pre-wrap; overflow-wrap: anywhere; }
 .leases:empty { display: none; }
+.relay-control { display: inline-flex; gap: 6px; align-items: center; }
+.relay-control input { width: 130px; }
 .leases .lease-card { border-top: 1px solid var(--line); padding: 8px 0; margin-top: 8px; }
 .leases .lease-card p { margin-bottom: 6px; }
 .leases input { margin-bottom: 5px; }
