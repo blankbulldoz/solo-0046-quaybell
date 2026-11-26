@@ -2,7 +2,7 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
-from .schema import SCHEMA, VERSION
+from .schema import MIGRATIONS, SCHEMA, VERSION
 
 
 class RelayPersistence:
@@ -11,7 +11,9 @@ class RelayPersistence:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in (0, VERSION):
+            if version in MIGRATIONS:
+                db.executescript(MIGRATIONS[version])
+            elif version not in (0, VERSION):
                 raise RuntimeError(f'无法打开存储版本 {version}')
             db.execute('PRAGMA journal_mode=WAL')
             db.executescript(f'BEGIN IMMEDIATE;\n{SCHEMA}\nPRAGMA user_version={VERSION};\nCOMMIT;')

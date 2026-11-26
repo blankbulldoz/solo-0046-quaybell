@@ -4,6 +4,7 @@ CHANNEL = r'/v1/channels/([a-z][a-z0-9-]{0,47})'
 GROUP = CHANNEL + r'/groups/([a-z][a-z0-9-]{0,47})'
 MESSAGE = r'/v1/messages/([1-9][0-9]{0,17})'
 DELIVERY = r'/v1/deliveries/([1-9][0-9]{0,17})'
+INSTANCE = r'/v1/instances/([1-9][0-9]{0,17})'
 
 PATTERNS = {
     'GET': (
@@ -15,6 +16,7 @@ PATTERNS = {
         (CHANNEL + '/groups', 'subscribe'), (GROUP + '/pause', 'pause'),
         (CHANNEL + '/preview', 'preview'), (CHANNEL + '/messages', 'publish'),
         (GROUP + '/claim', 'claim'), (DELIVERY + '/ack', 'ack'), (DELIVERY + '/nack', 'nack'),
+        (GROUP + '/instances', 'register'), (INSTANCE + '/deregister', 'deregister'),
         ('/v1/sweep', 'sweep'), (DELIVERY + '/redrive', 'redrive'), (CHANNEL + '/retention', 'prune'),
     ),
 }

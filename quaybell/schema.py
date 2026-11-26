@@ -1,4 +1,4 @@
-VERSION = 1
+VERSION = 2
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS channels (
   name TEXT PRIMARY KEY,
@@ -49,15 +49,24 @@ CREATE TABLE IF NOT EXISTS deliveries (
   terminal_at REAL,
   parent_id INTEGER UNIQUE REFERENCES deliveries(id)
 );
+CREATE TABLE IF NOT EXISTS instances (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  subscription_id INTEGER NOT NULL REFERENCES subscriptions(id),
+  worker TEXT NOT NULL,
+  registered REAL NOT NULL,
+  released REAL,
+  receipt TEXT
+);
 CREATE TABLE IF NOT EXISTS attempts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   delivery_id INTEGER NOT NULL REFERENCES deliveries(id) ON DELETE CASCADE,
   number INTEGER NOT NULL,
   token_digest TEXT NOT NULL UNIQUE,
   worker TEXT NOT NULL,
+  instance INTEGER REFERENCES instances(id),
   started REAL NOT NULL,
   expires REAL NOT NULL,
-  outcome TEXT NOT NULL CHECK('open' = outcome OR outcome IN ('acked','nacked','expired')),
+  outcome TEXT NOT NULL CHECK('open' = outcome OR outcome IN ('acked','nacked','expired','released')),
   finished REAL,
   reason TEXT,
   receipt TEXT,
@@ -76,6 +85,40 @@ CREATE INDEX IF NOT EXISTS delivery_lane ON deliveries(subscription_id,lane,id)
 CREATE INDEX IF NOT EXISTS delivery_origin ON deliveries(message_id,id);
 CREATE INDEX IF NOT EXISTS attempt_deadline ON attempts(expires,id) WHERE outcome='open';
 CREATE UNIQUE INDEX IF NOT EXISTS one_open_attempt ON attempts(delivery_id) WHERE outcome='open';
+CREATE INDEX IF NOT EXISTS attempt_instance ON attempts(instance,id) WHERE outcome='open';
 CREATE INDEX IF NOT EXISTS message_channel ON messages(channel,published,id);
 CREATE INDEX IF NOT EXISTS journal_message ON journal(message_id,id);
 '''
+
+MIGRATIONS = {1: '''
+BEGIN IMMEDIATE;
+CREATE TABLE IF NOT EXISTS instances (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  subscription_id INTEGER NOT NULL REFERENCES subscriptions(id),
+  worker TEXT NOT NULL,
+  registered REAL NOT NULL,
+  released REAL,
+  receipt TEXT
+);
+CREATE TABLE attempts_v2 (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  delivery_id INTEGER NOT NULL REFERENCES deliveries(id) ON DELETE CASCADE,
+  number INTEGER NOT NULL,
+  token_digest TEXT NOT NULL UNIQUE,
+  worker TEXT NOT NULL,
+  instance INTEGER REFERENCES instances(id),
+  started REAL NOT NULL,
+  expires REAL NOT NULL,
+  outcome TEXT NOT NULL CHECK('open' = outcome OR outcome IN ('acked','nacked','expired','released')),
+  finished REAL,
+  reason TEXT,
+  receipt TEXT,
+  UNIQUE(delivery_id, number)
+);
+INSERT INTO attempts_v2(id,delivery_id,number,token_digest,worker,started,expires,outcome,finished,reason,receipt)
+  SELECT id,delivery_id,number,token_digest,worker,started,expires,outcome,finished,reason,receipt FROM attempts;
+DROP TABLE attempts;
+ALTER TABLE attempts_v2 RENAME TO attempts;
+PRAGMA user_version=2;
+COMMIT;
+'''}

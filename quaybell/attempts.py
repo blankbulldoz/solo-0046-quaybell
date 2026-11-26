@@ -6,12 +6,13 @@ from .errors import conflict
 PUBLIC = 'id,delivery_id,number,worker,started,expires,outcome,finished,reason'
 
 
-def open_attempt(db, delivery, worker, now, seconds):
+def open_attempt(db, delivery, worker, now, seconds, instance=None):
     token = secrets.token_urlsafe(24)
     number = delivery['attempt_count'] + 1
-    key = db.execute('''INSERT INTO attempts(delivery_id,number,token_digest,worker,started,expires,outcome)
-                        VALUES (?,?,?,?,?,?,'open')''',
-                     (delivery['id'], number, codec.fingerprint(token), worker, now, now + seconds)).lastrowid
+    key = db.execute('''INSERT INTO attempts(delivery_id,number,token_digest,worker,instance,started,expires,outcome)
+                        VALUES (?,?,?,?,?,?,?,'open')''',
+                     (delivery['id'], number, codec.fingerprint(token), worker, instance,
+                      now, now + seconds)).lastrowid
     return dict(id=key, token=token, number=number, expires=now + seconds)
 
 
@@ -31,6 +32,11 @@ def expired(db, now, limit, subscription_id=None):
         query += ' AND d.subscription_id=?'
         values.append(subscription_id)
     return [dict(row) for row in db.execute(query + ' ORDER BY a.expires,a.id LIMIT ?', (*values, limit))]
+
+
+def held_by(db, instance):
+    return [dict(row) for row in db.execute(
+        "SELECT * FROM attempts WHERE instance=? AND outcome='open' ORDER BY id", (instance,))]
 
 
 def finish(db, attempt, outcome, reason, now, receipt):

@@ -27,7 +27,9 @@ python3 -m quaybell --demo
 | `/channels/{channel}/groups/{group}/pause` | POST | `paused` 为布尔值 |
 | `/channels/{channel}/preview` | POST | 用发布信封查询当前标签匹配结果 |
 | `/channels/{channel}/messages` | POST | `producer`、`key`、`lane`、`payload`、可选 `tags`、`delay_seconds` |
-| `/channels/{channel}/groups/{group}/claim` | POST | `worker`、可选 `limit`，返回含 `lease.token` 的领取项 |
+| `/channels/{channel}/groups/{group}/claim` | POST | `worker`、可选 `limit`、可选 `instance`，返回含 `lease.token` 的领取项 |
+| `/channels/{channel}/groups/{group}/instances` | POST | `worker`，登记一轮工作实例，返回 `id` |
+| `/instances/{id}/deregister` | POST | `{}`，注销实例并交回其仍持有的租约，重试读取已记录结果 |
 | `/deliveries/{id}/ack` | POST | `token` |
 | `/deliveries/{id}/nack` | POST | `token` 和 `reason` |
 | `/sweep` | POST | `{}` 或 `limit`，按原截止时间回收全局租约 |
@@ -38,6 +40,8 @@ python3 -m quaybell --demo
 | `/channels/{channel}/retention` | GET / POST | 候选复核，或以 `{}` / `limit` 清理实际合格项 |
 
 默认策略是 `lease_seconds=24`、`retry_seconds=3`、`max_attempts=3`、`retention_seconds=3600`。重发原生产键时复用初始匹配结果，内容变化则返回 409。如果应用侧副作用必须去重，应按消息和消费组身份设计处理键。重投需要按其业务语义明确将后继身份识别为有意重新处理。
+
+计划退出的工作进程可先按消费组登记一轮实例，领取时带上 `instance` 绑定租约。注销实例会把该实例仍持有的租约立即交回，投递回到可领取状态且不计失败退避；已交回租约的凭据随之失效。每次登记都是新的一代：同名进程重新登记得到新的实例号，旧实例的注销只按自身记录重放交回清单，不会释放新一代实例的租约，也不会改动已确认的记录。
 
 以下载荷可发布到示例频道。默认延迟为零。
 

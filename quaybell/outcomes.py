@@ -4,6 +4,8 @@ from . import attempts, delivery, journal, policy
 def apply(db, item, attempt, disposition, reason, now):
     if disposition == 'acked':
         state, when = 'acked', now
+    elif disposition == 'released':
+        state, when = 'waiting', now
     else:
         rule = policy.read(db, item['channel'], item['policy'])
         if attempt['number'] >= rule['max_attempts']:

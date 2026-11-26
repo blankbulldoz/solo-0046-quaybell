@@ -207,9 +207,47 @@ def export(client):
     return {'format': record['format'], 'sha256': digest}
 
 
+def instances(client):
+    client.channel()
+    client.subscribe()
+    first = client.register()
+    assert first['worker'] == 'bench-worker' and first['released'] is None
+    done = client.publish('signal-1')
+    held = client.publish('signal-2')
+    tail = client.publish('signal-3')
+    one = client.claim(instance=first['id'])[0]
+    assert one['message_id'] == done['message_id']
+    client.settle(one)
+    two = client.claim(instance=first['id'])[0]
+    assert two['message_id'] == held['message_id']
+    assert client.claim(instance=first['id']) == []
+    gone = client.deregister(first['id'])
+    assert gone['repeated'] is False
+    assert [row['delivery_id'] for row in gone['returned']] == [two['delivery_id']]
+    assert gone['returned'][0]['state'] == 'waiting' and gone['returned'][0]['outcome'] == 'released'
+    client.settle(two, expected=409)
+    client.request(GROUP + '/claim', {'worker': 'bench-worker', 'instance': first['id']}, 409)
+    second = client.register()
+    assert second['id'] != first['id'] and second['worker'] == first['worker']
+    again = client.claim(instance=second['id'])[0]
+    assert again['delivery_id'] == two['delivery_id'] and again['lease']['number'] == 2
+    client.settle(again)
+    three = client.claim(instance=second['id'])[0]
+    assert three['message_id'] == tail['message_id']
+    replay = client.deregister(first['id'])
+    assert replay == gone | {'repeated': True}
+    assert client.claim(instance=second['id']) == []
+    client.settle(three)
+    assert client.settle(one)['repeated'] is True
+    assert client.settle(again)['repeated'] is True
+    client.deregister(999999, expected=404)
+    return {'returned': gone['returned'], 'reclaimed': again['delivery_id'],
+            'successor': three['delivery_id']}
+
+
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             redrive=redrive, board=board, retention=retention, export=export, instances=instances)
 
 
 def main():
