@@ -12,6 +12,11 @@
       "responsibility": "版本、数值边界和退避"
     },
     {
+      "id": "impact",
+      "path": "quaybell/impact.py",
+      "responsibility": "提交前的策略影响对照、状态标记和过期识别"
+    },
+    {
       "id": "subscriptions",
       "path": "quaybell/subscriptions.py",
       "responsibility": "标签订阅和取件开关"
@@ -157,6 +162,45 @@
         "policy",
         "catalog",
         "journal"
+      ]
+    },
+    {
+      "id": "impact",
+      "name": "修订前对照影响",
+      "entry": "POST /v1/channels/{channel}/policy/impact",
+      "success": "列出手租约、等待重试、下一条发布和死信重投，并区分已确定与待后续操作",
+      "failure": "旧版号或旧对照标记不能提交为结果",
+      "verification": "python3 -m examples.walkthrough impact",
+      "steps": [
+        "通过 POST /v1/channels/{channel}/policy/impact 发起操作",
+        "对照只读，列出在手租约和等待重试为已确定、发布与重投为待后续操作",
+        "提交须附上该对照的 impact_token，状态变化后旧标记返回 409"
+      ],
+      "module_ids": [
+        "impact",
+        "policy",
+        "catalog",
+        "claims",
+        "redrive"
+      ]
+    },
+    {
+      "id": "stale",
+      "name": "对照过期后的再确认",
+      "entry": "POST /v1/channels/{channel}/policy",
+      "success": "预查后发生的发布使旧对照失效，重新对照后可提交",
+      "failure": "旧对照标记提交返回 409 并附最新对照",
+      "verification": "python3 -m examples.walkthrough stale",
+      "steps": [
+        "先取得对照，再发布新消息或处置投递",
+        "持旧标记提交被 409 拒绝，不产生新版本",
+        "重新对照取得新标记后才提交成功"
+      ],
+      "module_ids": [
+        "impact",
+        "catalog",
+        "policy",
+        "overview"
       ]
     },
     {

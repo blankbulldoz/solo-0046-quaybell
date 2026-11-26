@@ -1,4 +1,4 @@
-from . import catalog, deadletters, evidence, inspection, overview, retention, routing
+from . import catalog, deadletters, evidence, impact, inspection, overview, retention, routing
 from .protocol import Reply
 
 
@@ -20,5 +20,7 @@ def read(db, action, args, now):
     raise AssertionError(action)
 
 
-def check_route(db, channel, raw):
+def check_route(db, action, channel, raw, now):
+    if action == 'impact':
+        return Reply(impact.preview(db, channel, raw, now))
     return Reply(routing.preview(db, channel, raw))

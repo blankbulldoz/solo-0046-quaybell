@@ -4,7 +4,7 @@ Quaybell 是面向内部服务集成的持久消息中间件。应用通过 HTTP
 
 ## 消息与投递约定
 
-- 频道是生产键、策略和消费组的命名空间。策略版本递增。原始消息、原始分发与重投生成的分发分别保留它们绑定的策略版本。
+- 频道是生产键、策略和消费组的命名空间。策略版本递增。原始消息、原始分发与重投生成的分发分别保留它们绑定的策略版本。修订提交前可用只读对照查看当前与拟修订策略对在手租约、等待重试、下一条新发布和死信重投的影响，并区分已确定与待后续操作；对照带状态标记，提交须回传该标记，状态变化后旧标记被拒绝。
 - 一个消息信封包含生产者、生产键、顺序键、精确匹配标签、载荷和延迟秒数。生产者和生产键相同且信封相同的重复发布复用第一次回执。标签和值精确匹配，空筛选表示全收。创建消费组只影响以后发布的消息。
 - 每个消费组中，一个顺序键上 ID 最小的未处置投递挡住后继。不同顺序键之间独立。领取最多 30 条，选择时按投递 ID 排序。没有常驻回收线程。取件会先扫描本组最多 100 个到期尝试，控制台可另外执行全局有界回收。
 - 暂停只影响之后的取件。租约凭据绑定一次尝试，在到期时刻失效。确认和明确拒绝可重试，相同请求读取已记录结果。客户仍须按业务需要自行去重其外部副作用。
@@ -14,7 +14,7 @@ Quaybell 是面向内部服务集成的持久消息中间件。应用通过 HTTP
 
 ## 职责
 
-`catalog`、`policy` 和 `subscriptions` 管辖拓扑与版本；`envelope`、`routing` 和 `publication` 从信封生成分发；`delivery`、`eligibility`、`attempts` 和 `claims` 一起决定谁能领取；`disposition`、`expiry` 和 `outcomes` 确保处置及重试一致；`inspection`、`overview`、`retention` 和 `evidence` 提供查询和保留处置。`persistence` 定义 SQLite 事务边界，接入层负责请求体和响应，控制台使用单页的公开 JSON 接口。
+`catalog`、`policy` 和 `subscriptions` 管辖拓扑与版本；`impact` 负责提交前的影响对照和状态标记；`envelope`、`routing` 和 `publication` 从信封生成分发；`delivery`、`eligibility`、`attempts` 和 `claims` 一起决定谁能领取；`disposition`、`expiry` 和 `outcomes` 确保处置及重试一致；`inspection`、`overview`、`retention` 和 `evidence` 提供查询和保留处置。`persistence` 定义 SQLite 事务边界，接入层负责请求体和响应，控制台使用单页的公开 JSON 接口。
 
 ## 验证边界
 

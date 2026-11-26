@@ -37,7 +37,12 @@
         <label>最大尝试次数<input name="max_attempts" type="number" min="1" max="12" required></label>
         <label>保留秒数<input name="retention_seconds" type="number" min="1" max="604800" required></label>
       </div>
-      <button>提交新版</button>
+      <div class="button-row">
+        <button name="mode" value="impact" class="quiet">对比影响</button>
+        <button name="mode" value="commit" disabled>提交新版</button>
+      </div>
+      <p class="muted" id="impact-status" aria-live="polite">先对比影响再提交；提交须基于当前对照。</p>
+      <div id="impact" class="impact" hidden></div>
     </form>
   </details>
   <details data-needs-channel>

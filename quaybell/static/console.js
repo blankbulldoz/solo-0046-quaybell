@@ -1,11 +1,19 @@
 import {$, TEXT, api, button, clock, node, notice, onForm, parse, rows, run, status} from './relay.js';
 
-const state = {channel: null, group: null, board: null, sequence: 0, retention: null, leases: new Map()};
+const state = {channel: null, group: null, board: null, sequence: 0, retention: null, leases: new Map(), impact: null};
 const policyFields = ['lease_seconds', 'retry_seconds', 'max_attempts', 'retention_seconds'];
 const group = () => state.board?.groups.find(item => item.name === state.group);
 const channelPath = () => `/channels/${state.channel}`;
 const groupPath = () => `${channelPath()}/groups/${state.group}`;
 const traceLink = (id, label = `#${id}`) => button(label, () => trace(id), {className: 'link'});
+const submitButton = () => $('revise').querySelector('button[value="commit"]');
+const holdSubmit = disabled => {
+  const control = submitButton();
+  control.disabled = disabled;
+  control.dataset.keepDisabled = String(disabled);
+};
+const proposedValues = form => Object.fromEntries(policyFields.map(key => [key, Number(form.elements[key].value)]));
+const sameValues = (left, right) => policyFields.every(key => left?.[key] === right?.[key]);
 
 function selectButton(name, active, action) {
   const control = button(name, async () => {
@@ -23,6 +31,15 @@ function resetRetention() {
   $('retention-result').textContent = '';
 }
 
+function clearImpact(message) {
+  state.impact = null;
+  holdSubmit(true);
+  $('impact').hidden = true;
+  $('impact').replaceChildren();
+  $('impact-status').textContent = message || '先对比影响再提交；提交须基于当前对照。';
+  $('impact-status').dataset.state = 'idle';
+}
+
 async function choose(channel) {
   if (channel !== state.channel) {
     state.channel = channel;
@@ -30,6 +47,7 @@ async function choose(channel) {
     state.board = null;
     $('publication-result').textContent = '';
     resetRetention();
+    clearImpact();
   }
   await refresh();
 }
@@ -68,6 +86,10 @@ function render() {
   if (form.dataset.stamp !== stamp) {
     for (const field of policyFields) form.elements[field].value = board?.policy[field] ?? '';
     form.dataset.stamp = stamp;
+    if (stamp) clearImpact(`当前v${board.policy.version}，表单已重置；先对比影响再提交。`);
+    else clearImpact();
+  } else {
+    syncImpact();
   }
   $('queue-group').textContent = selected?.name ?? '';
   $('stats').replaceChildren(...['ready','leased','blocked','delayed','paused','expired'].map(key => {
@@ -145,6 +167,121 @@ async function trace(id) {
   $('trace').showModal();
 }
 
+const CERTAINTY = {settled: '已确定', pending: '待后续操作'};
+
+function effectCard(item) {
+  const card = node('article', '', 'effect');
+  card.dataset.certainty = item.certainty;
+  const head = node('div', '', 'effect-head');
+  head.append(node('h4', item.title), node('span', CERTAINTY[item.certainty] || item.certainty, 'certainty'));
+  card.append(head, node('p', item.summary, 'muted'),
+    node('p', item.current_text, 'effect-line'), node('p', item.proposed_text, 'effect-line'));
+  if (item.fresh_note) card.append(node('p', item.fresh_note, 'muted'));
+  if (item.items?.length) {
+    const list = node('ul', '', 'effect-items');
+    list.append(...item.items.map(entry => node('li',
+      `#${entry.delivery_id} · ${entry.group_name} · 顺序键 ${entry.lane} · v${entry.policy}` +
+      (entry.expires != null
+        ? ` · ${entry.expired ? '已到期待回收' : `剩余 ${entry.remaining_seconds} 秒`}` : '') +
+      (entry.next_backoff_seconds != null
+        ? ` · 下次退避 ${entry.next_backoff_seconds} 秒 / 租约 ${entry.next_lease_seconds} 秒` : ''))));
+    if (item.omitted) list.append(node('li', `另有 ${item.omitted} 条未展开`, 'muted'));
+    card.append(list);
+  }
+  return card;
+}
+
+function renderImpact() {
+  const report = state.impact;
+  if (!report) return;
+  const {baseline, proposed, effects, settled_count: settled} = report;
+  $('impact').replaceChildren(
+    node('p', `v${baseline.version} → v${proposed.version} · 在手已确定 ${settled} · 其余待后续操作`,
+      'impact-head'),
+    node('p', report.binding_note, 'muted'), ...effects.map(effectCard));
+  $('impact').hidden = false;
+  $('impact-status').textContent = report.stale
+    ? '提交被拒，以下为最新状态的重算对照：请核对后再提交。'
+    : `对照基于 ${clock(report.observed_at)} 的快照；确认无误后再提交。`;
+  $('impact-status').dataset.state = report.stale ? 'stale' : 'ready';
+  holdSubmit(Boolean(report.stale));
+}
+
+function syncImpact() {
+  const form = $('revise');
+  const report = state.impact;
+  if (!report) return;
+  if (form.dataset.stamp !== report.stamp) {
+    clearImpact('频道或版本已变化，旧对照失效；请重新对比影响。');
+  } else if (state.board && report.baseline.state && state.board.state_token !== report.baseline.state) {
+    clearImpact('对照之后频道已有新发布、领取或处置，旧对照失效；请重新对比影响。');
+  }
+}
+
+async function showImpact() {
+  await refresh();
+  const form = $('revise');
+  const channel = state.channel;
+  const board = state.board;
+  const expected = Number(form.dataset.stamp.split('/')[1]);
+  const proposed = proposedValues(form);
+  let report;
+  try {
+    report = await api(`${channelPath()}/policy/impact`, {...proposed, expected});
+  } catch (problem) {
+    if (problem.status !== 409) throw problem;
+    clearImpact('频道策略已被他人修订，旧版号不再适用；请核对新版本后重新对比影响。');
+    await refresh();
+    return;
+  }
+  if (state.channel !== channel || form.dataset.stamp !== `${channel}/${expected}`) {
+    clearImpact('对照期间频道已切换或刷新，请重新对比影响。');
+    return;
+  }
+  if (board && board.state_token !== report.baseline.state) {
+    clearImpact('对照期间频道状态已有变化，本次对照不可用于提交；请重新对比影响。');
+    return;
+  }
+  state.impact = {...report, stamp: form.dataset.stamp, values: proposed};
+  renderImpact();
+}
+
+async function commitRevision() {
+  const form = $('revise');
+  const report = state.impact;
+  const proposed = proposedValues(form);
+  if (!report || report.stamp !== form.dataset.stamp || !sameValues(report.values, proposed)) {
+    clearImpact('拟修订值已改动或对照已失效；请重新对比影响。');
+    return;
+  }
+  const expected = Number(form.dataset.stamp.split('/')[1]);
+  try {
+    const result = await api(`${channelPath()}/policy`, {
+      ...proposed, expected, impact_token: report.baseline.token,
+    });
+    clearImpact();
+    notice(`已提交策略 v${result.version}`);
+    await refresh();
+  } catch (problem) {
+    if (problem.code === 'stale_preview' && problem.detail) {
+      state.impact = {...problem.detail, stamp: form.dataset.stamp, values: proposed, stale: true};
+      renderImpact();
+      $('impact-status').textContent =
+        '提交被拒：对照之后频道已有变化，旧对照不能当作刚提交的结果。' +
+        '下面是按最新状态重算的对照，尚未提交；请重新对比影响后再提交。';
+      $('impact-status').dataset.state = 'stale';
+      await refresh();
+    } else if (problem.code === 'stale_preview' || problem.status === 409) {
+      clearImpact('提交被拒：旧对照已失效，未提交任何改动；请重新对比影响。');
+      $('impact-status').dataset.state = 'stale';
+      await refresh();
+    } else {
+      throw problem;
+    }
+    notice('提交被拒：旧对照已失效，未提交', true);
+  }
+}
+
 onForm('create-channel', async ({name}) => {
   await api('/channels', {name});
   await choose(name);
@@ -179,13 +316,13 @@ onForm('claim', async ({worker, limit}) => {
   notice(reply.paused ? '消费组已暂停' : `领取 ${reply.items.length} 条`);
   await refresh();
 });
-onForm('revise', async values => {
-  const expected = Number($('revise').dataset.stamp.split('/')[1]);
-  const report = await api(`${channelPath()}/policy`, Object.fromEntries([
-    ...Object.entries(values).map(([key, value]) => [key, Number(value)]), ['expected', expected],
-  ]));
-  notice(`已提交策略 v${report.version}`);
-  await refresh();
+onForm('revise', async (values, mode) => {
+  if (mode === 'commit') return commitRevision(values);
+  return showImpact(values);
+});
+$('revise').addEventListener('input', () => {
+  if (!state.impact) return;
+  clearImpact('拟修订值已改动，旧对照失效；请重新对比影响。');
 });
 $('toggle-group').addEventListener('click', () => run(async () => {
   if (!group()) return;

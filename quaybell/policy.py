@@ -6,9 +6,13 @@ LIMITS = {'lease_seconds': (1, 300, '租约秒数'), 'retry_seconds': (0, 300, '
 DEFAULT = dict(lease_seconds=24, retry_seconds=3, max_attempts=3, retention_seconds=3600)
 
 
-def validated(raw):
+def checked(raw):
     inputs.require(raw, LIMITS)
-    return [inputs.integer(raw[key], *limits) for key, limits in LIMITS.items()]
+    return {key: inputs.integer(raw[key], *limits) for key, limits in LIMITS.items()}
+
+
+def validated(raw):
+    return list(checked(raw).values())
 
 
 def read(db, channel, version=None):

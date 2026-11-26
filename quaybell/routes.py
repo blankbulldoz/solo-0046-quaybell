@@ -12,6 +12,7 @@ PATTERNS = {
     ),
     'POST': (
         ('/v1/channels', 'create_channel'), (CHANNEL + '/policy', 'revision'),
+        (CHANNEL + '/policy/impact', 'impact'),
         (CHANNEL + '/groups', 'subscribe'), (GROUP + '/pause', 'pause'),
         (CHANNEL + '/preview', 'preview'), (CHANNEL + '/messages', 'publish'),
         (GROUP + '/claim', 'claim'), (DELIVERY + '/ack', 'ack'), (DELIVERY + '/nack', 'nack'),

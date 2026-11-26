@@ -45,6 +45,14 @@ class Session:
     def publish(self, key='signal-1', lane='coil-north', expected=201, **extra):
         return self.request(CHANNEL + '/messages', envelope(key, lane, **extra), expected)
 
+    def impact(self, policy):
+        return self.request(CHANNEL + '/policy/impact', policy)
+
+    def revise(self, policy, expected=201):
+        report = self.impact(policy)
+        return self.request(CHANNEL + '/policy',
+                           policy | {'impact_token': report['baseline']['token']}, expected)
+
     def claim(self, limit=1, worker='bench-worker'):
         return self.request(GROUP + '/claim', {'worker': worker, 'limit': limit})['items']
 

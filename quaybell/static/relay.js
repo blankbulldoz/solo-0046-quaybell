@@ -12,7 +12,13 @@ export async function api(path, data) {
   };
   const response = await fetch(`/v1${path}`, options);
   const body = await response.json();
-  if (!response.ok) throw new Error(body.message || `请求失败（${response.status}）`);
+  if (!response.ok) {
+    const problem = new Error(body.message || `请求失败（${response.status}）`);
+    problem.status = response.status;
+    problem.code = body.error;
+    problem.detail = body.detail;
+    throw problem;
+  }
   return body;
 }
 
@@ -46,7 +52,7 @@ export async function run(action, control) {
   if (control) control.disabled = true;
   try { await action(); }
   catch (problem) { notice(problem.message || '操作失败', true); }
-  finally { if (control) control.disabled = false; }
+  finally { if (control) control.disabled = control.dataset.keepDisabled === 'true'; }
 }
 
 export function onForm(id, listener) {

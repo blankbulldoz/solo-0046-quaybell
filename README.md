@@ -14,6 +14,8 @@ python3 -m quaybell --demo
 
 左栏选择频道和消费组，中栏查看分发、消息和死信，右栏发布、取件、修订策略或清理。点击投递号可以检查该消息下的各组尝试并下载证据。浏览器关闭时，本次页面领到的租约凭据会随页面关闭丢弃，租约到时可回收。演示模式的延迟和租约使用实际系统时钟。
 
+修订策略时先点「对比影响」：控制台按当前在手租约、等待重试、下一条新发布和死信重投四类对照当前与拟修订参数，并标明哪些影响已经确定（已发放租约的到期时刻、已绑定版本的退避与尝试上限），哪些要等之后真正发布或重投才发生。对照只读；提交按钮只有在取得当前对照后才可用。对照之后若又有人发布、领取、处置或抢先修订，旧对照会被标记失效，提交返回 409 `stale_preview`（或版号冲突）且不产生新版本；控制台会清掉旧对照并要求重新对比，不会把重算结果说成已提交。
+
 ## HTTP 接口
 
 以下路径使用 `/v1` 前缀，写入和预查使用 `POST` 与 `application/json`。`{channel}`、`{group}` 和 `{id}` 用返回的标识替换。所有时间是 Unix 秒。
@@ -22,7 +24,8 @@ python3 -m quaybell --demo
 | --- | --- | --- |
 | `/channels` | GET / POST | 枚举频道或用 `name`、可选 `policy` 建立频道 |
 | `/channels/{channel}` | GET | 当前策略、分组计数、队列样本、近期消息与死信 |
-| `/channels/{channel}/policy` | POST | 全部四个策略值和预期版号 `expected` |
+| `/channels/{channel}/policy` | POST | 全部四个策略值和预期版号 `expected`，提交须附预览返回的 `impact_token` |
+| `/channels/{channel}/policy/impact` | POST | 只读对照：全部四个策略值和 `expected`，返回在手租约、等待重试、下一条发布和死信重投的影响 |
 | `/channels/{channel}/groups` | POST | `name`、可选匹配 `tags` |
 | `/channels/{channel}/groups/{group}/pause` | POST | `paused` 为布尔值 |
 | `/channels/{channel}/preview` | POST | 用发布信封查询当前标签匹配结果 |
@@ -37,7 +40,7 @@ python3 -m quaybell --demo
 | `/messages/{id}/evidence` | GET | `quaybell-trace/1` JSON 下载，摘要针对除 `sha256` 之外的规范化内容 |
 | `/channels/{channel}/retention` | GET / POST | 候选复核，或以 `{}` / `limit` 清理实际合格项 |
 
-默认策略是 `lease_seconds=24`、`retry_seconds=3`、`max_attempts=3`、`retention_seconds=3600`。重发原生产键时复用初始匹配结果，内容变化则返回 409。如果应用侧副作用必须去重，应按消息和消费组身份设计处理键。重投需要按其业务语义明确将后继身份识别为有意重新处理。
+默认策略是 `lease_seconds=24`、`retry_seconds=3`、`max_attempts=3`、`retention_seconds=3600`。重发原生产键时复用初始匹配结果，内容变化则返回 409。如果应用侧副作用必须去重，应按消息和消费组身份设计处理键。重投需要按其业务语义明确将后继身份识别为有意重新处理。修订后的版本只绑定提交之后新建的分发：已发放租约保持原到期时刻，等待重试按投递绑定的版本计算下一次租约、退避和尝试上限，重投在调用时绑定当时版本，已有消息的保留年龄也仍按发布时版本。
 
 以下载荷可发布到示例频道。默认延迟为零。
 

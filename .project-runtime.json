@@ -19,6 +19,14 @@
       "command": "python3 -m examples.walkthrough revision"
     },
     {
+      "workflow_id": "impact",
+      "command": "python3 -m examples.walkthrough impact"
+    },
+    {
+      "workflow_id": "stale",
+      "command": "python3 -m examples.walkthrough stale"
+    },
+    {
       "workflow_id": "group",
       "command": "python3 -m examples.walkthrough group"
     },

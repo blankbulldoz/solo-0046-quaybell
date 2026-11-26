@@ -119,6 +119,19 @@ output { white-space: pre-wrap; overflow-wrap: anywhere; }
 .leases .lease-card { border-top: 1px solid var(--line); padding: 8px 0; margin-top: 8px; }
 .leases .lease-card p { margin-bottom: 6px; }
 .leases input { margin-bottom: 5px; }
+.impact { display: grid; gap: 7px; margin-top: 4px; }
+.impact:empty { display: none; }
+.impact-head { font: 650 .9rem ui-monospace, monospace; }
+.effect { padding: 8px 9px; border: 1px solid var(--line); border-radius: 6px; background: #fbfcf9; }
+.effect[data-certainty="settled"] { border-left: 3px solid #7c9a89; }
+.effect[data-certainty="pending"] { border-left: 3px solid #c98b33; }
+.effect-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.effect-head h4 { margin: 0; font-size: .91rem; }
+.effect .certainty { font-size: .76rem; padding: 1px 6px; border-radius: 4px; color: #15583e; background: #e4f2e9; }
+.effect[data-certainty="pending"] .certainty { color: #714b16; background: #fff0db; }
+.effect p { margin: 5px 0 0; font-size: .83rem; }
+.effect-items { margin: 5px 0 0; padding-left: 18px; color: var(--muted); font-size: .8rem; }
+#impact-status[data-state="stale"] { color: #852620; font-weight: 600; }
 .notice { position: fixed; bottom: 15px; right: 16px; max-width: min(450px, 92vw); z-index: 2; padding: 10px 14px; color: white; background: #214737; border-radius: 6px; box-shadow: 0 4px 16px #0002; }
 .notice[data-error="true"] { background: #812c24; }
 dialog { width: min(700px, 92vw); max-height: 88vh; padding: 16px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); }

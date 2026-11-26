@@ -1,7 +1,7 @@
 class RelayError(Exception):
-    def __init__(self, status, code, message):
+    def __init__(self, status, code, message, detail=None):
         super().__init__(message)
-        self.status, self.code = status, code
+        self.status, self.code, self.detail = status, code, detail
 
 
 def invalid(message):
@@ -14,3 +14,7 @@ def missing(message):
 
 def conflict(message):
     return RelayError(409, 'conflict', message)
+
+
+def stale(message, detail=None):
+    return RelayError(409, 'stale_preview', message, detail)
