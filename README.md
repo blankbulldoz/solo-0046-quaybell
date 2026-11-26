@@ -52,6 +52,8 @@ python3 -m compileall -q quaybell examples
 python3 -m examples.walkthrough claim
 python3 -m examples.walkthrough retention
 python3 -m examples.walkthrough export
+# 同键队头：有效租约 → 越截止未回收（看板 expired）→ 真正回收后 delayed/ready/dead
+python3 -m examples.headsequence
 ```
 
 每个工作流示例使用临时 SQLite 文件、受控时钟和本机随机端口，运行完即释放。可用 `python3 -m examples.walkthrough --help` 列出所有工作流。正式测试套件延后建设。

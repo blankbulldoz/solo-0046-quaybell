@@ -2,6 +2,12 @@ from . import attempts, delivery, eligibility, expiry, inputs, journal, policy, 
 
 
 def claim(db, channel, group, raw, now):
+    """领取写路径：暂停闸门 -> 组内有界回收 -> 有限就绪键 -> 发租约。
+
+    全部步骤在同一个写事务内；``eligibility.ready`` 只给键，暂停判断、
+    回收编排和租约写入都留在本路径。暂停时直接返回且**不**回收，已有
+    租约仍可经 ack/nack 处置，过期租约可由全局 ``/sweep`` 回收。
+    """
     inputs.require(raw, ('worker',), ('limit',))
     worker = inputs.name(raw['worker'], '工作进程')
     limit = inputs.integer(raw.get('limit', 1), 1, 30, '领取上限')

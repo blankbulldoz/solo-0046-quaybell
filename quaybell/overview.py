@@ -4,6 +4,12 @@ from . import catalog, deadletters, eligibility, inspection, policy, subscriptio
 
 
 def board(db, channel, now):
+    """看板只读路径：在同一读快照内逐组做全量积压归因。
+
+    与 ``claims.claim`` 共享 ``eligibility`` 的同键队首定义，但这里不回收、
+    不写入：越过截止尚未回收的队首由 ``eligibility.explain`` 记为
+    ``expired``，而不是被就地处理。
+    """
     catalog.get(db, channel)
     summary = []
     for group in subscriptions.for_channel(db, channel):
