@@ -11,10 +11,17 @@ Quaybell 是面向内部服务集成的持久消息中间件。应用通过 HTTP
 - 明确拒绝的退避以处置时间起算，超时退避以租约截止时间起算。退避从原策略初始值指数增长，最长一小时。尝试数用尽时，投递进入死信。重投追加一条本组投递，绑定当前策略并加入所在顺序键的队尾。每条死信只追加一个直接后继，后继可独立失败。
 - 清理时按消息发布时绑定的保留秒数比较年龄，并检查整条消息的所有派生分发。清理在写事务内重新计算，删除原信封、原回执、尝试和消息级审计。之后原生产键可复用。频道级清理记录保留被删 ID。
 - 租约、公示时间和就绪时间都是 Unix 秒。同步 API 返回 JSON。证据导出绑定一个观察时间和读取快照，去除租约凭据并提供内容摘要。
+- 重演会话按创建时的原尝试事实选入，窗口与消息发布时间无关；回放项持有的原消息或原尝试即使之后被清理，其引用仍可用于复盘。
 
 ## 职责
 
-`catalog`、`policy` 和 `subscriptions` 管辖拓扑与版本；`envelope`、`routing` 和 `publication` 从信封生成分发；`delivery`、`eligibility`、`attempts` 和 `claims` 一起决定谁能领取；`disposition`、`expiry` 和 `outcomes` 确保处置及重试一致；`inspection`、`overview`、`retention` 和 `evidence` 提供查询和保留处置。`persistence` 定义 SQLite 事务边界，接入层负责请求体和响应，控制台使用单页的公开 JSON 接口。
+`catalog`、`policy` 和 `subscriptions` 管辖拓扑与版本；`envelope`、`routing` 和 `publication` 从信封生成分发；`delivery`、`eligibility`、`attempts` 和 `claims` 一起决定谁能领取；`disposition`、`expiry` 和 `outcomes` 确保处置及重试一致；`inspection`、`overview`、`retention` 和 `evidence` 提供查询和保留处置；`replay` 依据原尝试的失败事实生成隔离的临时重演会话，并保留原消息和原尝试引用。`persistence` 定义 SQLite 事务边界，接入层负责请求体和响应，控制台使用单页的公开 JSON 接口。
+
+## 重演会话约定
+
+- 选择事实是原尝试的失败时刻：`nacked` 取尝试完成时刻，`expired` 取租约截止时刻；同一原投递只取窗口内最后一条失败尝试，按失败时刻和原投递 ID 升序。
+- 会话创建在单个写事务内完成，保存消息信封与尝试历史副本；回放项独立领取、确认和拒绝，使用创建时的频道策略，不与生产组共享租约或顺序阻挡。
+- 会话关闭前必须没有打开的租约；关闭固化回放项状态和关闭时的生产侧计数。证据导出绑定观察时刻并给出基线、关闭时与当前的计数差值。
 
 ## 验证边界
 

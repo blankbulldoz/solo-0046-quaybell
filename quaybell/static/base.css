@@ -119,6 +119,12 @@ output { white-space: pre-wrap; overflow-wrap: anywhere; }
 .leases .lease-card { border-top: 1px solid var(--line); padding: 8px 0; margin-top: 8px; }
 .leases .lease-card p { margin-bottom: 6px; }
 .leases input { margin-bottom: 5px; }
+.replay-detail { margin-top: 10px; }
+.replay-detail table { table-layout: auto; }
+.replay-detail td { white-space: normal; vertical-align: top; }
+.replay-detail td.status { white-space: nowrap; }
+.replay-detail .button-row { flex-wrap: nowrap; }
+.replay-detail input { min-width: 96px; }
 .notice { position: fixed; bottom: 15px; right: 16px; max-width: min(450px, 92vw); z-index: 2; padding: 10px 14px; color: white; background: #214737; border-radius: 6px; box-shadow: 0 4px 16px #0002; }
 .notice[data-error="true"] { background: #812c24; }
 dialog { width: min(700px, 92vw); max-height: 88vh; padding: 16px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); }

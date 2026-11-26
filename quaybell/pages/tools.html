@@ -41,6 +41,20 @@
     </form>
   </details>
   <details data-needs-channel>
+    <summary>故障重演</summary>
+    <form id="open-replay" class="compact">
+      <p class="muted">按所选消费组失败尝试的失败时刻选入窗口，生成独立回放队列；原消息与原尝试只读引用。</p>
+      <div class="pair">
+        <label>窗口起点<input name="window_from" type="number" step="1" required></label>
+        <label>窗口终点<input name="window_to" type="number" step="1" required></label>
+      </div>
+      <label>选入上限<input name="limit" type="number" min="1" max="500" value="200"></label>
+      <button>生成回放队列</button>
+      <output class="muted" id="replay-result" aria-live="polite"></output>
+    </form>
+    <div id="replay-detail" class="replay-detail"></div>
+  </details>
+  <details data-needs-channel>
     <summary>保留复核</summary>
     <div class="compact">
       <p class="muted">清理时会重新检查消息年龄和所有关联投递。</p>

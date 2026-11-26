@@ -120,6 +120,11 @@
       "id": "api_writes",
       "path": "quaybell/api_writes.py",
       "responsibility": "JSON 处置调度"
+    },
+    {
+      "id": "replay",
+      "path": "quaybell/replay.py",
+      "responsibility": "临时重演会话、回放项与生产侧对照"
     }
   ],
   "workflows": [
@@ -422,6 +427,26 @@
         "inspection",
         "codec"
       ]
+    },
+    {
+      "id": "replay",
+      "name": "建立故障重演会话并核对生产侧",
+      "entry": "POST /v1/channels/{channel}/groups/{group}/replays",
+      "success": "按失败事实生成可单独处置的回放队列，关闭会话后生产侧计数与证据可核对",
+      "failure": "窗口起点晚于终点、重复打开同窗口或会话仍有未应答租约时拒绝",
+      "verification": "python3 -m examples.walkthrough replay",
+      "steps": [
+        "通过 POST /v1/channels/{channel}/groups/{group}/replays 指定窗口，按原尝试失败时刻选入回放项并保留原消息与原尝试引用",
+        "回放队列与生产组隔离，可单独领取、确认或拒绝，创建后原消息被清理仍可处置",
+        "关闭会话固化生产侧快照，evidence 导出含基线与关闭时计数供核对"
+      ],
+      "module_ids": [
+        "replay",
+        "attempts",
+        "delivery",
+        "outcomes",
+        "policy"
+      ]
     }
   ],
   "complexity": {
@@ -439,7 +464,8 @@
       "recovery_rollback",
       "error_propagation",
       "delete_removal",
-      "export_freeze"
+      "export_freeze",
+      "replay_isolation"
     ]
   }
 }

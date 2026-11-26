@@ -1,4 +1,4 @@
-from . import catalog, deadletters, evidence, inspection, overview, retention, routing
+from . import catalog, deadletters, evidence, inspection, overview, replay, retention, routing
 from .protocol import Reply
 
 
@@ -13,10 +13,19 @@ def read(db, action, args, now):
         return Reply(inspection.trace(db, int(args[0])))
     if action == 'retention':
         return Reply(retention.plan(db, args[0], now))
+    if action == 'replays':
+        return Reply({'channel': args[0], 'observed_at': now,
+                      'items': replay.list_for_channel(db, args[0])})
+    if action == 'replay':
+        return Reply(replay.detail(db, int(args[0]), now))
     if action == 'export':
         return Reply(evidence.export_trace(db, int(args[0]), now),
                      content_type='application/json; charset=utf-8',
                      filename=f'quaybell-trace-{args[0]}.json')
+    if action == 'replay_export':
+        return Reply(replay.export(db, int(args[0]), now),
+                     content_type='application/json; charset=utf-8',
+                     filename=f'quaybell-replay-{args[0]}.json')
     raise AssertionError(action)
 
 

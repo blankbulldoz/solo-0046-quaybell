@@ -207,9 +207,89 @@ def export(client):
     return {'format': record['format'], 'sha256': digest}
 
 
+def replay(client):
+    client.channel(POLICY)
+    client.subscribe()
+    base = client.clock[0]
+
+    early = client.publish('replay-early', 'coil-north')
+    client.settle(client.claim()[0], 'nack')
+    client.tick(3)
+    client.settle(client.claim()[0], 'nack')
+    middle = client.publish('replay-middle', 'coil-south')
+    client.settle(client.claim()[0], 'nack')
+    client.publish('replay-later', 'coil-west', delay_seconds=3600)
+
+    window = {'window_from': int(base + 2), 'window_to': int(base + 6)}
+    client.request(f'{CHANNEL}/groups/oscillator/replays',
+                   {'window_from': int(base + 6), 'window_to': int(base + 2)}, 400)
+    opened = client.open_replay(**window)
+    assert opened['window']['basis'] == 'attempt_failed' and opened['window']['basis_text']
+    assert opened['selected'] == 2 and opened['matched'] == 2 and opened['truncated'] is False
+    assert opened['counts'] == dict(waiting=2, leased=0, acked=0, dead=0)
+    items = {item['source']['message_id']: item for item in opened['items']}
+    assert set(items) == {early['message_id'], middle['message_id']}
+    early_item = items[early['message_id']]['source']
+    middle_item = items[middle['message_id']]['source']
+    assert early_item['message']['published'] < opened['window']['from']
+    assert opened['window']['from'] <= early_item['attempt']['failed_at'] <= opened['window']['to']
+    assert early_item['attempt']['number'] == 2 and early_item['attempt']['outcome'] == 'nacked'
+    assert early_item['delivery']['id'] == early['fanout']['oscillator']
+    assert opened['window']['from'] <= middle_item['message']['published'] <= opened['window']['to']
+    assert middle_item['attempt']['number'] == 1
+
+    client.tick(8)
+    pruned = client.request(CHANNEL + '/retention', {})
+    assert pruned['removed'] == [early['message_id']]
+    client.request(f"/messages/{early['message_id']}", expected=404)
+    after_prune = client.replay(opened['id'])
+    gone = next(item for item in after_prune['items'] if item['source']['message_id'] == early['message_id'])
+    assert gone['live']['message_present'] is False
+    assert gone['source']['message']['id'] == early['message_id']
+    assert gone['source']['attempt']['id'] == early_item['attempt']['id']
+    assert gone['source']['attempt']['reason'] == early_item['attempt']['reason']
+
+    claimed = client.replay_claim(opened['id'], limit=10)
+    assert {row['source']['message_id'] for row in claimed} == {early['message_id'], middle['message_id']}
+    assert all(row['lease']['token'] and row['source']['attempt']['id'] for row in claimed)
+
+    production = client.claim()[0]
+    assert production['delivery_id'] == middle['fanout']['oscillator']
+    confirm = next(row for row in claimed if row['source']['message_id'] == middle['message_id'])
+    settled = client.replay_settle(confirm)
+    assert settled['state'] == 'acked' and settled['repeated'] is False
+    assert client.replay_settle(confirm) == settled | {'repeated': True}
+    both = client.replay(opened['id'])
+    assert next(i for i in both['items'] if i['id'] == confirm['item_id'])['state'] == 'acked'
+    traced = client.request(f"/messages/{middle['message_id']}")
+    production_row = next(d for d in traced['deliveries'] if d['id'] == middle['fanout']['oscillator'])
+    assert production_row['state'] == 'leased'
+    client.replay_settle(next(row for row in claimed if row['source']['message_id'] == early['message_id']))
+
+    closed = client.close_replay(opened['id'])
+    assert closed['counts'] == dict(waiting=0, leased=0, acked=2, dead=0)
+    assert closed['production']['delta']['messages'] == -1
+    assert closed['production']['delta']['attempts']['nacked'] == -2
+    assert closed['production']['delta']['deliveries']['dead'] == -1
+    assert client.close_replay(opened['id']) == closed | {'repeated': True}
+    client.replay_claim(opened['id'], expected=409)
+    final = client.replay(opened['id'])
+    assert final['production']['current'] == closed['production']['at_close']
+
+    record = client.request(f"/replays/{opened['id']}/evidence")
+    digest = record.pop('sha256')
+    assert record['format'] == 'quaybell-replay/1'
+    assert fingerprint(pack(record)) == digest
+    assert record['replay']['counts'] == closed['counts']
+    assert record['production']['at_close'] == closed['production']['at_close']
+    return {'replay': opened['id'], 'basis': opened['window']['basis'],
+            'selected': opened['selected'], 'sha256': digest,
+            'production_delta': closed['production']['delta']}
+
+
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             redrive=redrive, board=board, retention=retention, export=export, replay=replay)
 
 
 def main():

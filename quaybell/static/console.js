@@ -1,6 +1,7 @@
 import {$, TEXT, api, button, clock, node, notice, onForm, parse, rows, run, status} from './relay.js';
 
-const state = {channel: null, group: null, board: null, sequence: 0, retention: null, leases: new Map()};
+const state = {channel: null, group: null, board: null, sequence: 0, retention: null, replays: [],
+  replay: null, replayLeases: new Map(), leases: new Map()};
 const policyFields = ['lease_seconds', 'retry_seconds', 'max_attempts', 'retention_seconds'];
 const group = () => state.board?.groups.find(item => item.name === state.group);
 const channelPath = () => `/channels/${state.channel}`;
@@ -28,7 +29,11 @@ async function choose(channel) {
     state.channel = channel;
     state.group = null;
     state.board = null;
+    state.replays = [];
+    state.replay = null;
+    state.replayLeases.clear();
     $('publication-result').textContent = '';
+    $('replay-result').textContent = '';
     resetRetention();
   }
   await refresh();
@@ -43,6 +48,8 @@ async function refresh() {
   if (current !== state.sequence) return;
   state.board = board;
   if (!group()) state.group = board?.groups[0]?.name ?? null;
+  state.replays = state.channel ? (await api(`${channelPath()}/replays`)).items : [];
+  if (current !== state.sequence) return;
   $('channels').replaceChildren(...(topology.length ? topology.map(({name}) =>
     selectButton(name, name === state.channel, () => choose(name))) : [node('p', '暂无频道', 'muted')]));
   render();
@@ -83,6 +90,21 @@ function render() {
   $('message-total').textContent = messages.length ? `最近 ${messages.length} 条` : '';
   rows('message-rows', messages.map(item => [traceLink(item.id), item.producer, item.dedup_key,
     `v${item.policy}`, clock(item.published)]), 5, '当前频道没有消息');
+  const replays = state.replays || [];
+  $('replay-total').textContent = replays.length ? `最近 ${replays.length} 个` : '';
+  rows('replay-rows', replays.map(item => [button(`#${item.id}`, () => openReplay(item.id),
+    {className: 'link'}), item.group,
+    `${clock(item.window.from)} → ${clock(item.window.to)} · ${TEXT[item.window.basis] || item.window.basis}`,
+    status(item.state),
+    `待 ${item.counts.waiting} · 领 ${item.counts.leased} · 确 ${item.counts.acked} · 死 ${item.counts.dead}`,
+    item.state === 'open'
+      ? button('关闭会话', async () => {
+        await api(`/replays/${item.id}/close`, {});
+        state.replayLeases.clear();
+        notice(`会话 #${item.id} 已关闭`);
+        await refresh();
+      })
+      : '—']), 6, '当前频道没有重演会话');
   const dead = board?.dead || [];
   $('dead-total').textContent = dead.length ? `最近 ${dead.length} 条` : '';
   rows('dead-rows', dead.map(item => [traceLink(item.message_id, `#${item.id}`), item.group_name,
@@ -94,6 +116,102 @@ function render() {
         await refresh();
       })]), 4, '当前频道没有死信');
   renderLeases();
+  renderReplay();
+}
+
+async function openReplay(id) {
+  const facts = await api(`/replays/${id}`);
+  state.replay = facts;
+  state.replayLeases.clear();
+  $('replay-result').textContent =
+    `会话 #${id} · ${facts.group} · ${facts.items.length} 项 · 选入依据：${facts.window.basis_text}`;
+  renderReplay();
+}
+
+function renderReplay() {
+  const facts = state.replay;
+  const host = $('replay-detail');
+  if (!facts || facts.channel !== state.channel) {
+    host.replaceChildren();
+    return;
+  }
+  const head = node('p', `窗口 ${clock(facts.window.from)} → ${clock(facts.window.to)} · `
+    + `按 v${facts.policy.version} 策略（租约 ${facts.policy.lease_seconds}s / 上限 ${facts.policy.max_attempts} 次）`, 'muted');
+  const controls = node('div', '', 'button-row');
+  if (facts.state === 'open') {
+    controls.append(button('领取 30 项', () => run(async () => {
+      const reply = await api(`/replays/${facts.id}/claim`, {worker: 'console-replay', limit: 30});
+      for (const item of reply.items) state.replayLeases.set(item.item_id, item);
+      notice(`领取 ${reply.items.length} 项`);
+      state.replay = await api(`/replays/${facts.id}`);
+      renderReplay();
+    })), button('关闭会话', async () => {
+      await api(`/replays/${facts.id}/close`, {});
+      state.replayLeases.clear();
+      notice(`会话 #${facts.id} 已关闭`);
+      await refresh();
+    }, {className: 'danger'}));
+  } else {
+    controls.append(node('span', `已于 ${clock(facts.closed)} 关闭，回放队列只读`, 'muted'));
+  }
+  const delta = facts.production.delta;
+  const production = node('p', `生产侧：消息 ${delta.messages >= 0 ? '+' : ''}${delta.messages} · `
+    + `投递 新增 ${delta.deliveries.waiting + delta.deliveries.leased} · 终态 `
+    + `${delta.deliveries.acked + delta.deliveries.dead} · 尝试 `
+    + `nack ${delta.attempts.nacked} / 超时 ${delta.attempts.expired}`, 'muted');
+  const table = node('table');
+  const thead = node('thead');
+  const hrow = node('tr');
+  for (const label of ['回放项', '原消息', '原尝试', '顺序键', '状态', '凭证与处置']) {
+    const th = node('th', label);
+    th.scope = 'col';
+    hrow.append(th);
+  }
+  thead.append(hrow);
+  const tbody = node('tbody');
+  for (const item of facts.items) {
+    const row = node('tr');
+    const attempt = item.source.attempt;
+    const live = item.live;
+    const source = node('div', '', 'mono');
+    source.append(node('div', `消息 #${item.source.message_id}${live.message_present ? '' : '（原消息已清理）'}`));
+    source.append(node('div', `${attempt.outcome === 'expired' ? '超时' : '拒绝'} · 第 ${attempt.number} 次 · 尝试 #${attempt.id}`, 'muted'));
+    const lease = state.replayLeases.get(item.id);
+    const actions = node('div', '', 'button-row');
+    if (facts.state === 'open' && lease) {
+      const reason = node('input');
+      reason.placeholder = '拒绝原因';
+      reason.maxLength = 240;
+      actions.append(reason, button('确认', async () => {
+        await api(`/replay-items/${item.id}/ack`, {token: lease.lease.token});
+        state.replayLeases.delete(item.id);
+        notice(`回放项 #${item.id}：已确认`);
+        state.replay = await api(`/replays/${facts.id}`);
+        renderReplay();
+      }), button('拒绝', async () => {
+        if (!reason.value.trim()) throw new Error('请填写拒绝原因');
+        await api(`/replay-items/${item.id}/nack`, {token: lease.lease.token, reason: reason.value});
+        state.replayLeases.delete(item.id);
+        notice(`回放项 #${item.id}：已拒绝`);
+        state.replay = await api(`/replays/${facts.id}`);
+        renderReplay();
+      }, {className: 'danger'}));
+    } else if (facts.state === 'open' && item.state === 'leased') {
+      actions.append(node('span', '本轮凭据在别处或已过期', 'muted'));
+    } else {
+      actions.append(node('span', item.attempt_count ? `已处置 ${item.attempt_count} 次` : '未领取', 'muted'));
+    }
+    for (const cell of [node('div', `#${item.id}`, 'mono'), source,
+      node('div', `${attempt.worker} · ${clock(attempt.failed_at || attempt.finished)}`, 'muted'),
+      item.lane, status(item.state), actions]) {
+      const td = node('td');
+      td.append(cell);
+      row.append(td);
+    }
+    tbody.append(row);
+  }
+  table.append(thead, tbody);
+  host.replaceChildren(head, controls, production, table);
 }
 
 function renderLeases() {
@@ -158,6 +276,21 @@ onForm('create-group', async ({name, tags}) => {
   $('create-group').reset();
   await refresh();
   notice('消费组已添加');
+});
+onForm('open-replay', async ({window_from, window_to, limit}) => {
+  if (!group()) throw new Error('请先选择消费组');
+  const channel = state.channel, selected = state.group;
+  const reply = await api(`${channelPath()}/groups/${selected}/replays`, {
+    window_from: Number(window_from), window_to: Number(window_to),
+    ...(limit ? {limit: Number(limit)} : {}),
+  });
+  if (state.channel !== channel) return;
+  $('open-replay').reset();
+  $('replay-result').textContent = `会话 #${reply.id} · 选入 ${reply.selected} 项`
+    + `${reply.truncated ? `（共 ${reply.matched} 项，已达上限）` : ''}`;
+  notice(`重演会话 #${reply.id} 已生成`);
+  await refresh();
+  await openReplay(reply.id);
 });
 onForm('publish', async (values, mode) => {
   const channel = state.channel;

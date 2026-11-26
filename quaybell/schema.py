@@ -1,4 +1,4 @@
-VERSION = 1
+VERSION = 2
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS channels (
   name TEXT PRIMARY KEY,
@@ -78,4 +78,69 @@ CREATE INDEX IF NOT EXISTS attempt_deadline ON attempts(expires,id) WHERE outcom
 CREATE UNIQUE INDEX IF NOT EXISTS one_open_attempt ON attempts(delivery_id) WHERE outcome='open';
 CREATE INDEX IF NOT EXISTS message_channel ON messages(channel,published,id);
 CREATE INDEX IF NOT EXISTS journal_message ON journal(message_id,id);
+CREATE TABLE IF NOT EXISTS replays (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  channel TEXT NOT NULL REFERENCES channels(name),
+  subscription_id INTEGER NOT NULL,
+  group_name TEXT NOT NULL,
+  window_from REAL NOT NULL,
+  window_to REAL NOT NULL,
+  basis TEXT NOT NULL,
+  policy INTEGER NOT NULL,
+  lease_seconds INTEGER NOT NULL,
+  retry_seconds INTEGER NOT NULL,
+  max_attempts INTEGER NOT NULL,
+  state TEXT NOT NULL CHECK(state IN ('open','closed')),
+  created REAL NOT NULL,
+  closed REAL,
+  baseline TEXT NOT NULL,
+  summary TEXT
+);
+CREATE TABLE IF NOT EXISTS replay_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  replay_id INTEGER NOT NULL REFERENCES replays(id) ON DELETE CASCADE,
+  source_delivery_id INTEGER NOT NULL,
+  source_message_id INTEGER NOT NULL,
+  source_attempt_id INTEGER NOT NULL,
+  source_attempt_number INTEGER NOT NULL,
+  source_attempt_outcome TEXT NOT NULL,
+  lane TEXT NOT NULL,
+  envelope TEXT NOT NULL,
+  source_facts TEXT NOT NULL,
+  state TEXT NOT NULL CHECK(state IN ('waiting','leased','acked','dead')),
+  ready_at REAL NOT NULL,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  terminal_at REAL,
+  UNIQUE(replay_id, source_delivery_id)
+);
+CREATE TABLE IF NOT EXISTS replay_attempts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id INTEGER NOT NULL REFERENCES replay_items(id) ON DELETE CASCADE,
+  number INTEGER NOT NULL,
+  token_digest TEXT NOT NULL UNIQUE,
+  worker TEXT NOT NULL,
+  started REAL NOT NULL,
+  expires REAL NOT NULL,
+  outcome TEXT NOT NULL CHECK('open' = outcome OR outcome IN ('acked','nacked','expired')),
+  finished REAL,
+  reason TEXT,
+  receipt TEXT,
+  UNIQUE(item_id, number)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS replay_open_window
+  ON replays(channel, subscription_id, window_from, window_to) WHERE state='open';
+CREATE INDEX IF NOT EXISTS replay_channel ON replays(channel, id);
+CREATE INDEX IF NOT EXISTS replay_item_order ON replay_items(replay_id, id);
+CREATE TABLE IF NOT EXISTS replay_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  replay_id INTEGER NOT NULL REFERENCES replays(id) ON DELETE CASCADE,
+  item_id INTEGER REFERENCES replay_items(id) ON DELETE CASCADE,
+  at REAL NOT NULL,
+  kind TEXT NOT NULL,
+  details TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS replay_event_order ON replay_events(replay_id, id);
+CREATE INDEX IF NOT EXISTS replay_attempt_deadline ON replay_attempts(expires, id) WHERE outcome='open';
+CREATE UNIQUE INDEX IF NOT EXISTS one_open_replay_attempt
+  ON replay_attempts(item_id) WHERE outcome='open';
 '''

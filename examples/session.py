@@ -54,6 +54,29 @@ class Session:
             data['reason'] = '下游拒绝校验帧'
         return self.request(f"/deliveries/{item['delivery_id']}/{mode}", data, expected)
 
+    def open_replay(self, group='oscillator', limit=None, expected=201, **window):
+        data = dict(window)
+        if limit is not None:
+            data['limit'] = limit
+        return self.request(f'{CHANNEL}/groups/{group}/replays', data, expected)
+
+    def replay_claim(self, replay, limit=10, worker='replay-worker', expected=200):
+        reply = self.request(f'/replays/{replay}/claim',
+                             {'worker': worker, 'limit': limit}, expected)
+        return reply['items'] if expected == 200 else reply
+
+    def replay_settle(self, item, mode='ack', expected=200):
+        data = {'token': item['lease']['token']}
+        if mode == 'nack':
+            data['reason'] = '重演复核仍失败'
+        return self.request(f"/replay-items/{item['item_id']}/{mode}", data, expected)
+
+    def close_replay(self, replay, expected=200):
+        return self.request(f'/replays/{replay}/close', {}, expected)
+
+    def replay(self, replay):
+        return self.request(f'/replays/{replay}')
+
 
 def envelope(key='signal-1', lane='coil-north', **extra):
     return dict(producer='signal-source', key=key, lane=lane, payload={'value': 18},
