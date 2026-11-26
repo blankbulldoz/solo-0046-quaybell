@@ -30,6 +30,7 @@ python3 -m quaybell --demo
 | `/channels/{channel}/groups/{group}/claim` | POST | `worker`、可选 `limit`，返回含 `lease.token` 的领取项 |
 | `/deliveries/{id}/ack` | POST | `token` |
 | `/deliveries/{id}/nack` | POST | `token` 和 `reason` |
+| `/deliveries/{id}/cancel` | POST | `{}` 或可选 `reason`，取消仍在首次等待的投递 |
 | `/sweep` | POST | `{}` 或 `limit`，按原截止时间回收全局租约 |
 | `/channels/{channel}/dead` | GET | 最近 50 个失败投递及最后一次尝试 |
 | `/deliveries/{id}/redrive` | POST | `{}`，使用当前策略追加一个后继投递 |
@@ -38,6 +39,8 @@ python3 -m quaybell --demo
 | `/channels/{channel}/retention` | GET / POST | 候选复核，或以 `{}` / `limit` 清理实际合格项 |
 
 默认策略是 `lease_seconds=24`、`retry_seconds=3`、`max_attempts=3`、`retention_seconds=3600`。重发原生产键时复用初始匹配结果，内容变化则返回 409。如果应用侧副作用必须去重，应按消息和消费组身份设计处理键。重投需要按其业务语义明确将后继身份识别为有意重新处理。
+
+值守人员可对仍在**首次等待**的投递执行取消：领取后进入退避的等待（已有尝试）、租约中或任何终态投递都会返回 409。取消是写事务内的比较交换，与首次领取竞争时，先抢到写事务的一方决定归属——领取先到则取消返回 409，取消先到则该投递不再出现在候选队列，同顺序键后继立即解除阻挡；被取消的投递与取消事件仍挂在原消息下，可通过消息轨迹和证据导出查到，直到常规保留清理删除整条消息。对已取消投递重复取消返回同一条取消记录（`repeated: true`）。
 
 以下载荷可发布到示例频道。默认延迟为零。
 

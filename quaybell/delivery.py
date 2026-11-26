@@ -31,3 +31,9 @@ def close(db, key, state, when):
         db.execute('UPDATE deliveries SET state=?,ready_at=? WHERE id=?', (state, when, key))
     else:
         db.execute('UPDATE deliveries SET state=?,terminal_at=? WHERE id=?', (state, when, key))
+
+
+def cancel(db, key, when):
+    """在写事务内比较状态后取消：仅从未领取、仍在首次等待的投递可被取消。"""
+    return db.execute('''UPDATE deliveries SET state='cancelled',terminal_at=?
+                         WHERE id=? AND state='waiting' AND attempt_count=0''', (when, key)).rowcount

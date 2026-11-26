@@ -55,6 +55,14 @@
       "command": "python3 -m examples.walkthrough sweep"
     },
     {
+      "workflow_id": "cancel",
+      "command": "python3 -m examples.walkthrough cancel"
+    },
+    {
+      "workflow_id": "cancel_race",
+      "command": "python3 -m examples.walkthrough cancel_race"
+    },
+    {
       "workflow_id": "dead",
       "command": "python3 -m examples.walkthrough dead"
     },

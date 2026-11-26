@@ -102,6 +102,7 @@ td.wrap { white-space: normal; min-width: 115px; overflow-wrap: anywhere; }
 .status[data-state="ready"], .status[data-state="acked"] { color: #15583e; background: #e4f2e9; }
 .status[data-state="blocked"], .status[data-state="delayed"] { color: #714b16; background: #fff0db; }
 .status[data-state="expired"], .status[data-state="dead"], .status[data-state="nacked"] { color: #852620; background: #fbe9e6; }
+.status[data-state="cancelled"] { color: #4a4a55; background: #e8e8ec; }
 .status[data-state="leased"], .status[data-state="open"] { color: #225382; background: #e9f0f8; }
 .tools { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .tools > h2 { padding: 12px 13px; margin: 0; }

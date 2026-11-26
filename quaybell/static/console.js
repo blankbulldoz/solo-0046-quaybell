@@ -77,7 +77,9 @@ function render() {
     return card;
   }));
   rows('queue-rows', (selected?.sample || []).map(item => [traceLink(item.message_id, `#${item.id}`),
-    item.lane, status(item.cause), `#${item.head_id}`, clock(item.ready_at)]), 5,
+    item.lane, status(item.cause), `#${item.head_id}`, clock(item.ready_at),
+    item.state === 'waiting' && item.attempt_count === 0
+      ? button('取消首次等待', () => cancelFirstWait(item.id), {className: 'danger'}) : '']), 6,
     selected ? '当前消费组没有未完成投递' : '请选择已有消费组');
   const messages = board?.messages || [];
   $('message-total').textContent = messages.length ? `最近 ${messages.length} 条` : '';
@@ -121,6 +123,14 @@ function renderLeases() {
   }));
 }
 
+async function cancelFirstWait(id) {
+  if (!window.confirm(`取消投递 #${id} 的首次等待？取消后同顺序键的后继可以立即前进。`)) return;
+  const result = await api(`/deliveries/${id}/cancel`, {});
+  if (result.repeated) notice(`投递 #${id}：此前已取消，返回原取消记录`);
+  else notice(`投递 #${id} 已取消首次等待`);
+  await refresh();
+}
+
 async function trace(id) {
   const facts = await api(`/messages/${id}`);
   $('trace-title').textContent = `消息 #${id}`;
@@ -136,11 +146,19 @@ async function trace(id) {
     entries.append(...item.attempts.map(a => node('li',
       `第 ${a.number} 次 · ${a.worker} · ${TEXT[a.outcome]} · ${clock(a.started)}${a.reason ? ` · ${a.reason}` : ''}`)));
     section.append(label, entries);
+    if (item.state === 'waiting' && item.attempt_count === 0) {
+      section.append(button('取消首次等待', async () => {
+        await cancelFirstWait(item.id);
+        await trace(id);
+      }, {className: 'danger'}));
+    }
     return section;
   }));
   if (!facts.deliveries.length) $('trace-deliveries').append(node('p', '发布时没有匹配消费组', 'muted'));
-  $('trace-events').replaceChildren(...facts.events.map(item => node('li',
-    `${clock(item.at)} · ${TEXT[item.kind === 'leased' ? 'leased_event' : item.kind]} · ${JSON.stringify(item.details)}`)));
+  $('trace-events').replaceChildren(...facts.events.map(item => {
+    const label = TEXT[item.kind === 'leased' ? 'leased_event' : item.kind === 'cancelled' ? 'cancelled_event' : item.kind];
+    return node('li', `${clock(item.at)} · ${label} · ${JSON.stringify(item.details)}`);
+  }));
   $('trace-export').href = `/v1/messages/${id}/evidence`;
   $('trace').showModal();
 }

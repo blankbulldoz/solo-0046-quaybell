@@ -1,6 +1,7 @@
 """Run one bounded middleware workflow through the public HTTP listener."""
 import argparse
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 from quaybell.codec import fingerprint, pack
 
@@ -142,6 +143,74 @@ def sweep(client):
     return result
 
 
+def cancel(client):
+    client.channel(POLICY | {'max_attempts': 3})
+    client.subscribe('rotor')
+    client.subscribe('idle')
+    first = client.publish()
+    tail = client.publish('signal-2')
+    rotor, idle = first['fanout']['rotor'], first['fanout']['idle']
+    rotor_tail, idle_tail = tail['fanout']['rotor'], tail['fanout']['idle']
+    tried = client.claim_for('rotor')[0]
+    client.settle(tried, 'nack')
+    client.request(f'/deliveries/{rotor}/cancel', {}, 409)
+    done = client.cancel(idle)
+    assert done == {'delivery_id': idle, 'state': 'cancelled', 'effective_at': done['effective_at'],
+                    'reason': '值守确认该组无需处理', 'repeated': False}
+    assert client.cancel(idle) == done | {'repeated': True}
+    idle_successor = client.claim_for('idle')[0]
+    assert idle_successor['delivery_id'] == idle_tail
+    assert client.claim_for('rotor') == []
+    trace = client.request(f"/messages/{first['message_id']}")
+    states = {row['id']: row['state'] for row in trace['deliveries']}
+    assert states == {rotor: 'waiting', idle: 'cancelled'}
+    event = next(item for item in trace['events'] if item['kind'] == 'cancelled')
+    assert event['details'] == done
+    evidence = client.request(f"/messages/{first['message_id']}/evidence")
+    digest = evidence.pop('sha256')
+    assert fingerprint(pack(evidence)) == digest
+    assert any(item['kind'] == 'cancelled' for item in evidence['trace']['events'])
+    client.tick(3)
+    rotor_retry = client.claim_for('rotor')[0]
+    assert rotor_retry['delivery_id'] == rotor and rotor_retry['lease']['number'] == 2
+    client.settle(rotor_retry)
+    advanced = client.claim_for('rotor')[0]
+    assert advanced['delivery_id'] == rotor_tail
+    return {'cancelled': idle, 'rejected_with_attempt': rotor,
+            'successor_after_cancel': idle_tail, 'successor_after_retry': rotor_tail,
+            'event': event['details']}
+
+
+def cancel_race(client):
+    client.channel()
+    client.subscribe()
+    first = client.publish()
+    delivery_id = first['fanout']['oscillator']
+
+    def race(mode):
+        if mode == 'cancel':
+            return mode, client.request(f'/deliveries/{delivery_id}/cancel', {}, expected=None)
+        return mode, client.claim()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = [future.result() for future in [pool.submit(race, 'claim'),
+                                                   pool.submit(race, 'cancel')]]
+    claimed = next(body for mode, body in outcomes if mode == 'claim')
+    cancelled = next(body for mode, body in outcomes if mode == 'cancel')
+    winner = 'claim' if claimed and cancelled.get('error') else 'cancel'
+    trace = client.request(f"/messages/{first['message_id']}")
+    row = next(item for item in trace['deliveries'] if item['id'] == delivery_id)
+    if winner == 'claim':
+        assert claimed[0]['delivery_id'] == delivery_id and cancelled['error'] == 'conflict'
+        assert row['state'] == 'leased' and len(row['attempts']) == 1
+    else:
+        assert claimed == [] and cancelled['state'] == 'cancelled'
+        assert row['state'] == 'cancelled' and row['attempts'] == []
+        assert client.claim() == []
+    return {'winner': winner, 'delivery_state': row['state'],
+            'claim_items': len(claimed), 'cancelled': cancelled.get('state')}
+
+
 def dead(client):
     client.channel(POLICY | {'max_attempts': 1})
     client.subscribe()
@@ -208,7 +277,8 @@ def export(client):
 
 
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
-             inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
+             inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep,
+             cancel=cancel, cancel_race=cancel_race, dead=dead,
              redrive=redrive, board=board, retention=retention, export=export)
 
 

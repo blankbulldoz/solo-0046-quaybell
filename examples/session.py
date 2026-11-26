@@ -29,7 +29,7 @@ class Session:
             response = exc
         with response:
             body = json.load(response)
-            if response.code != expected:
+            if expected is not None and response.code != expected:
                 raise RuntimeError((path, response.code, expected, body))
             return body
 
@@ -53,6 +53,12 @@ class Session:
         if mode == 'nack':
             data['reason'] = '下游拒绝校验帧'
         return self.request(f"/deliveries/{item['delivery_id']}/{mode}", data, expected)
+
+    def cancel(self, delivery_id, expected=200):
+        return self.request(f'/deliveries/{delivery_id}/cancel', {'reason': '值守确认该组无需处理'}, expected)
+
+    def claim_for(self, group, limit=1, worker='bench-worker'):
+        return self.request(f"{CHANNEL}/groups/{group}/claim", {'worker': worker, 'limit': limit})['items']
 
 
 def envelope(key='signal-1', lane='coil-north', **extra):

@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS deliveries (
   subscription_id INTEGER NOT NULL REFERENCES subscriptions(id),
   lane TEXT NOT NULL,
   policy INTEGER NOT NULL,
-  state TEXT NOT NULL CHECK(state IN ('waiting','leased','acked','dead')),
+  state TEXT NOT NULL CHECK(state IN ('waiting','leased','acked','dead','cancelled')),
   ready_at REAL NOT NULL,
   attempt_count INTEGER NOT NULL DEFAULT 0,
   terminal_at REAL,
