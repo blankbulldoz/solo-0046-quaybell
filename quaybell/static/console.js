@@ -7,6 +7,17 @@ const channelPath = () => `/channels/${state.channel}`;
 const groupPath = () => `${channelPath()}/groups/${state.group}`;
 const traceLink = (id, label = `#${id}`) => button(label, () => trace(id), {className: 'link'});
 
+function prerequisitesCell(item) {
+  if (!item.prerequisites?.length) return node('span', '—', 'muted');
+  const cell = node('div', '', 'prereq');
+  cell.append(node('span', item.prerequisites.map(id => `#${id}`).join('、'), 'mono'));
+  const dead = (item.blocking_prerequisites || []).filter(detail => detail.state === 'dead');
+  for (const detail of dead) {
+    cell.append(node('span', `#${detail.delivery_id} 终败：${detail.reason || '无原因'}`, 'prereq-dead'));
+  }
+  return cell;
+}
+
 function selectButton(name, active, action) {
   const control = button(name, async () => {
     const scope = control.closest('nav') ? $('channels') : $('groups');
@@ -70,14 +81,14 @@ function render() {
     form.dataset.stamp = stamp;
   }
   $('queue-group').textContent = selected?.name ?? '';
-  $('stats').replaceChildren(...['ready','leased','blocked','delayed','paused','expired'].map(key => {
+  $('stats').replaceChildren(...['ready','leased','blocked','delayed','gated','gated_dead','paused','expired'].map(key => {
     const card = node('div', '', 'stat');
     card.dataset.state = key;
     card.append(node('strong', selected?.counts[key] ?? 0), node('span', TEXT[key], 'muted'));
     return card;
   }));
   rows('queue-rows', (selected?.sample || []).map(item => [traceLink(item.message_id, `#${item.id}`),
-    item.lane, status(item.cause), `#${item.head_id}`, clock(item.ready_at)]), 5,
+    item.lane, status(item.cause), `#${item.head_id}`, prerequisitesCell(item), clock(item.ready_at)]), 6,
     selected ? '当前消费组没有未完成投递' : '请选择已有消费组');
   const messages = board?.messages || [];
   $('message-total').textContent = messages.length ? `最近 ${messages.length} 条` : '';
@@ -136,6 +147,9 @@ async function trace(id) {
     entries.append(...item.attempts.map(a => node('li',
       `第 ${a.number} 次 · ${a.worker} · ${TEXT[a.outcome]} · ${clock(a.started)}${a.reason ? ` · ${a.reason}` : ''}`)));
     section.append(label, entries);
+    if (item.requires?.length) {
+      section.append(node('p', `前置投递：${item.requires.map(id => `#${id}`).join('、')}`, 'muted'));
+    }
     return section;
   }));
   if (!facts.deliveries.length) $('trace-deliveries').append(node('p', '发布时没有匹配消费组', 'muted'));
@@ -177,6 +191,14 @@ onForm('claim', async ({worker, limit}) => {
   const reply = await api(`${groupPath()}/claim`, {worker, limit: Number(limit)});
   for (const item of reply.items) state.leases.set(item.delivery_id, {...item, channel, group: selected});
   notice(reply.paused ? '消费组已暂停' : `领取 ${reply.items.length} 条`);
+  await refresh();
+});
+onForm('requirements', async ({delivery_id, requires}) => {
+  const ids = requires.split(',').map(value => Number(value.trim())).filter(Boolean);
+  const reply = await api(`/deliveries/${Number(delivery_id)}/requirements`, {requires: ids});
+  $('requirements-result').textContent = reply.repeated
+    ? `投递 #${reply.delivery_id} 的前置已存在，无新增`
+    : `已为投递 #${reply.delivery_id} 声明前置：${reply.requires.map(id => `#${id}`).join('、')}`;
   await refresh();
 });
 onForm('revise', async values => {

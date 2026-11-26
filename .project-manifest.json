@@ -54,7 +54,12 @@
     {
       "id": "eligibility",
       "path": "quaybell/eligibility.py",
-      "responsibility": "同键队首和原因分类"
+      "responsibility": "同键队首、前置门控和原因分类"
+    },
+    {
+      "id": "dependencies",
+      "path": "quaybell/dependencies.py",
+      "responsibility": "前置投递声明、死锁与循环校验及门控状态"
     },
     {
       "id": "expiry",
@@ -270,6 +275,26 @@
         "expiry",
         "policy",
         "attempts"
+      ]
+    },
+    {
+      "id": "requirement",
+      "name": "声明前置投递并按门控领取",
+      "entry": "POST /v1/deliveries/{id}/requirements",
+      "success": "同组前置全部确认后采样才可领取，其他顺序键照常消费",
+      "failure": "同键反向依赖与循环依赖返回 409，前置终败时解释为前置终败",
+      "verification": "python3 -m examples.walkthrough requirement",
+      "steps": [
+        "通过 POST /v1/deliveries/{id}/requirements 声明一个或多个同组前置投递",
+        "同键先入队投递反向依赖后入队投递或形成循环时拒绝并说明无法推进的投递",
+        "前置确认解除门控，前置死信则本投递保持不可领取并在积压解释中给出原因"
+      ],
+      "module_ids": [
+        "dependencies",
+        "eligibility",
+        "claims",
+        "delivery",
+        "journal"
       ]
     },
     {

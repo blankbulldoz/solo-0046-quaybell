@@ -29,6 +29,18 @@
     <div class="leases" id="leases"></div>
   </details>
   <details data-needs-channel>
+    <summary>声明前置投递</summary>
+    <form id="requirements" class="compact">
+      <p class="muted">为等待中的投递声明前置校准：所有前置确认后该投递才可领取；前置进入死信则该投递不会就绪。前置必须属于同一消费组，同顺序键只能依赖更早入队的投递。</p>
+      <div class="pair">
+        <label>本投递号<input name="delivery_id" type="number" min="1" required></label>
+        <label>前置投递号（逗号分隔）<input name="requires" placeholder="12, 15" required></label>
+      </div>
+      <div class="button-row"><button>声明前置</button></div>
+      <output class="muted" id="requirements-result" aria-live="polite"></output>
+    </form>
+  </details>
+  <details data-needs-channel>
     <summary>修订策略</summary>
     <form id="revise" class="compact">
       <div class="pair">

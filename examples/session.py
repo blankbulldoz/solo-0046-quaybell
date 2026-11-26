@@ -54,6 +54,15 @@ class Session:
             data['reason'] = '下游拒绝校验帧'
         return self.request(f"/deliveries/{item['delivery_id']}/{mode}", data, expected)
 
+    def require(self, delivery_id, requires, expected=201):
+        return self.request(f'/deliveries/{delivery_id}/requirements', {'requires': requires}, expected)
+
+    def board(self):
+        return self.request(CHANNEL)
+
+    def trace(self, message_id, expected=200):
+        return self.request(f'/messages/{message_id}', expected=expected)
+
 
 def envelope(key='signal-1', lane='coil-north', **extra):
     return dict(producer='signal-source', key=key, lane=lane, payload={'value': 18},

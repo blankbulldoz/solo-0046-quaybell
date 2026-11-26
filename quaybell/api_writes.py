@@ -1,4 +1,4 @@
-from . import catalog, claims, disposition, expiry, inputs, publication, redrive, retention, subscriptions
+from . import catalog, claims, dependencies, disposition, expiry, inputs, publication, redrive, retention, subscriptions
 from .protocol import Reply
 
 
@@ -18,6 +18,9 @@ def write(db, action, args, raw, now):
         return Reply(claims.claim(db, *args, raw, now))
     if action in ('ack', 'nack'):
         return Reply(disposition.settle(db, int(args[0]), raw, now, action + 'ed'))
+    if action == 'requirements':
+        item = dependencies.declare(db, int(args[0]), raw, now)
+        return Reply(item, 200 if item['repeated'] else 201)
     if action == 'sweep':
         return Reply(expiry.sweep(db, raw, now))
     if action == 'redrive':

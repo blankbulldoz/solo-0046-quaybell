@@ -71,6 +71,13 @@ CREATE TABLE IF NOT EXISTS journal (
   kind TEXT NOT NULL,
   details TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS delivery_prerequisites (
+  delivery_id INTEGER NOT NULL REFERENCES deliveries(id) ON DELETE CASCADE,
+  requires_id INTEGER NOT NULL REFERENCES deliveries(id) ON DELETE CASCADE,
+  declared REAL NOT NULL,
+  PRIMARY KEY(delivery_id, requires_id)
+);
+CREATE INDEX IF NOT EXISTS prerequisite_lookup ON delivery_prerequisites(requires_id,delivery_id);
 CREATE INDEX IF NOT EXISTS delivery_lane ON deliveries(subscription_id,lane,id)
   WHERE state IN ('waiting','leased');
 CREATE INDEX IF NOT EXISTS delivery_origin ON deliveries(message_id,id);

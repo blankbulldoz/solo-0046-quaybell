@@ -9,6 +9,10 @@ def eligible(db, channel, now, limit):
         WHERE m.channel=? AND m.published+p.retention_seconds<=?
           AND NOT EXISTS(SELECT 1 FROM deliveries d WHERE d.message_id=m.id
                          AND d.state IN ('waiting','leased'))
+          AND NOT EXISTS(SELECT 1 FROM deliveries d
+                         JOIN delivery_prerequisites p ON p.requires_id=d.id
+                         JOIN deliveries w ON w.id=p.delivery_id AND w.state IN ('waiting','leased')
+                         WHERE d.message_id=m.id)
         ORDER BY m.id LIMIT ?''', (channel, now, limit))]
 
 
