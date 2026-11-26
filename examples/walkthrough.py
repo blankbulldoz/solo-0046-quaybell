@@ -207,9 +207,78 @@ def export(client):
     return {'format': record['format'], 'sha256': digest}
 
 
+def reconcile(client):
+    client.channel()
+    client.subscribe()
+
+    # 场景一：新版两个供应商把同一设备产量分别报成整克与千克小数，归一化后等量；
+    # 客户端丢响应后换单位重交，必须读回同一承诺而不是误报冲突。
+    first = client.publish('yield-a')
+    taken = client.claim()[0]
+    grams = {'unit': 'g', 'amount': 1200, 'supplier': 'vendor-scale-g'}
+    accepted = client.settle(taken, result=grams)
+    assert accepted['state'] == 'acked' and accepted['result']['canonical_amount'] == '1200000'
+    assert accepted['result']['result_unit'] == 'g'
+    assert accepted['result']['result_rule'] == 1 and accepted['repeated'] is False
+    lost_reply = client.settle(taken, result={'unit': 'kg', 'amount': '1.200', 'supplier': 'vendor-scale-kg'})
+    assert lost_reply['repeated'] is True
+    assert lost_reply['result']['canonical_amount'] == accepted['result']['canonical_amount']
+    # 键顺序和数字写法不同的等价报文同样命中幂等，不被序列化差异误伤。
+    shuffled = client.settle(taken, result={'supplier': 'vendor-scale-kg', 'amount': '1.2', 'unit': 'kg'})
+    assert shuffled == lost_reply
+
+    # 场景二：界面按千克取整后都显示 1.2 kg，但实际量不同的重交不能当成重复。
+    lookalike = client.settle(
+        taken, expected=409,
+        result={'unit': 'kg', 'amount': '1.201', 'supplier': 'vendor-scale-kg'})
+    assert '不一致' in lookalike['message']
+    assert '已记录 1200.000 g' in lookalike['message'] and '1201.000 g' in lookalike['message']
+    # 冲突拒收不改写原承诺：再交等量报文仍读回第一次接收的回执。
+    assert client.settle(taken, result=grams)['result']['canonical_amount'] == '1200000'
+
+    # 场景三：原租约过期后才送达的结果必须拒收，且解释被拒收的归一化量。
+    late_msg = client.publish('yield-b')
+    late_item = client.claim()[0]
+    client.tick(4)
+    late = client.settle(late_item, expected=409,
+                         result={'unit': 'kg', 'amount': '2.5', 'supplier': 'vendor-scale-kg'})
+    assert '租约已处置或超时' in late['message'] and '2500.000 g' in late['message']
+    assert '结果未被接收' in late['message']
+    client.request('/sweep', {'limit': 1})
+    client.tick(3)
+    retaken = client.claim()[0]
+    assert retaken['delivery_id'] == late_msg['fanout']['oscillator']
+    assert retaken['lease']['number'] == 2
+    recovered = client.settle(retaken, result={'unit': 'g', 'amount': 2500})
+    assert recovered['result']['canonical_amount'] == '2500000'
+
+    # 规则升级：历史 ACK 仍按接收时钉住的 v1 解释，新投递使用 v2。
+    new_rule = client.result_rule({
+        'base_unit': 'g', 'tick_scale': 0,
+        'units': {'g': {'factor': '1'}, 'kg': {'factor': '1000'}, 'mg': {'factor': '0.001'}}})
+    assert new_rule['version'] == 2
+    # 旧记录在 v2（毫克级小数会被拒）下仍按 v1 接受原始重交。
+    legacy_repeat = client.settle(taken, result={'unit': 'kg', 'amount': '1.200'})
+    assert legacy_repeat['result']['result_rule'] == 1 and legacy_repeat['repeated'] is True
+    fresh = client.publish('yield-c')
+    fresh_item = client.claim()[0]
+    coarse = client.settle(fresh_item, result={'unit': 'g', 'amount': 88})
+    assert coarse['result']['result_rule'] == 2 and coarse['result']['canonical_amount'] == '88'
+
+    # 对外证据：只含归一化量、规则版本与决定原因，供应商原始明细和内部摘要不出现。
+    evidence = client.request(f"/messages/{first['message_id']}/evidence")
+    encoded = pack(evidence)
+    assert 'vendor-scale' not in encoded and 'result_digest' not in encoded
+    assert evidence['result_rules']['1']['base_unit'] == 'g'
+    digest = evidence.pop('sha256')
+    assert fingerprint(pack(evidence)) == digest
+    return {'accepted': accepted['result'], 'rule_after_change': new_rule['version'],
+            'evidence_sha256': digest}
+
+
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             redrive=redrive, board=board, retention=retention, export=export, reconcile=reconcile)
 
 
 def main():

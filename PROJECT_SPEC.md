@@ -11,10 +11,11 @@ Quaybell 是面向内部服务集成的持久消息中间件。应用通过 HTTP
 - 明确拒绝的退避以处置时间起算，超时退避以租约截止时间起算。退避从原策略初始值指数增长，最长一小时。尝试数用尽时，投递进入死信。重投追加一条本组投递，绑定当前策略并加入所在顺序键的队尾。每条死信只追加一个直接后继，后继可独立失败。
 - 清理时按消息发布时绑定的保留秒数比较年龄，并检查整条消息的所有派生分发。清理在写事务内重新计算，删除原信封、原回执、尝试和消息级审计。之后原生产键可复用。频道级清理记录保留被删 ID。
 - 租约、公示时间和就绪时间都是 Unix 秒。同步 API 返回 JSON。证据导出绑定一个观察时间和读取快照，去除租约凭据并提供内容摘要。
+- ACK 可携带处理结果 `result`。频道维护版本化的对账规则（基准单位、刻度精度、单位因子）；上报量按有理数精确归一化到基准单位的整数刻度后比较，不使用浮点或界面取整。结果钉住接收时的规则版号，规则升级后历史接收与拒绝仍按当时版本解释。供应商原始明细仅以摘要留存于内部，不进入对外证据。
 
 ## 职责
 
-`catalog`、`policy` 和 `subscriptions` 管辖拓扑与版本；`envelope`、`routing` 和 `publication` 从信封生成分发；`delivery`、`eligibility`、`attempts` 和 `claims` 一起决定谁能领取；`disposition`、`expiry` 和 `outcomes` 确保处置及重试一致；`inspection`、`overview`、`retention` 和 `evidence` 提供查询和保留处置。`persistence` 定义 SQLite 事务边界，接入层负责请求体和响应，控制台使用单页的公开 JSON 接口。
+`catalog`、`policy` 和 `subscriptions` 管辖拓扑与版本；`envelope`、`routing` 和 `publication` 从信封生成分发；`delivery`、`eligibility`、`attempts` 和 `claims` 一起决定谁能领取；`disposition`、`expiry` 和 `outcomes` 确保处置及重试一致；`reconcile` 负责结果规则版本化、单位归一化与等量/冲突判定；`inspection`、`overview`、`retention` 和 `evidence` 提供查询和保留处置。`persistence` 定义 SQLite 事务边界与版本迁移，接入层负责请求体和响应，控制台使用单页的公开 JSON 接口。
 
 ## 验证边界
 

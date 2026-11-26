@@ -3,7 +3,10 @@ import secrets
 from . import codec
 from .errors import conflict
 
-PUBLIC = 'id,delivery_id,number,worker,started,expires,outcome,finished,reason'
+# result_digest 是供应商原始报文的摘要，属内部完整性核对字段，不进入任何对外视图。
+PUBLIC = ('id,delivery_id,number,worker,started,expires,outcome,finished,reason,'
+          'result_rule,result_unit,canonical_amount,result_reason')
+RESULT_COLUMNS = ('result_rule', 'result_unit', 'canonical_amount', 'result_digest', 'result_reason')
 
 
 def open_attempt(db, delivery, worker, now, seconds):
@@ -33,11 +36,22 @@ def expired(db, now, limit, subscription_id=None):
     return [dict(row) for row in db.execute(query + ' ORDER BY a.expires,a.id LIMIT ?', (*values, limit))]
 
 
-def finish(db, attempt, outcome, reason, now, receipt):
-    db.execute('UPDATE attempts SET outcome=?,reason=?,finished=?,receipt=? WHERE id=?',
-               (outcome, reason, now, codec.pack(receipt), attempt['id']))
+def finish(db, attempt, outcome, reason, now, receipt, result=None):
+    if result is None:
+        db.execute('UPDATE attempts SET outcome=?,reason=?,finished=?,receipt=? WHERE id=?',
+                   (outcome, reason, now, codec.pack(receipt), attempt['id']))
+        return
+    values = [result[key] for key in RESULT_COLUMNS]
+    db.execute('''UPDATE attempts SET outcome=?,reason=?,finished=?,receipt=?,
+                  result_rule=?,result_unit=?,canonical_amount=?,result_digest=?,result_reason=? WHERE id=?''',
+               (outcome, reason, now, codec.pack(receipt), *values, attempt['id']))
 
 
 def for_delivery(db, key):
-    return [dict(row) for row in db.execute(
+    rows = [dict(row) for row in db.execute(
         f'SELECT {PUBLIC} FROM attempts WHERE delivery_id=? ORDER BY number', (key,))]
+    for row in rows:
+        if row['result_rule'] is None:
+            for column in ('result_rule', 'result_unit', 'canonical_amount', 'result_reason'):
+                row.pop(column, None)
+    return rows

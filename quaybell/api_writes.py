@@ -7,6 +7,8 @@ def write(db, action, args, raw, now):
         return Reply(catalog.create(db, raw, now), 201)
     if action == 'revision':
         return Reply(catalog.update_policy(db, *args, raw, now), 201)
+    if action == 'result_rule':
+        return Reply(catalog.update_result_rule(db, *args, raw, now), 201)
     if action == 'subscribe':
         return Reply(subscriptions.create(db, *args, raw, now), 201)
     if action == 'pause':

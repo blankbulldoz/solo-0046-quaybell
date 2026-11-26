@@ -53,7 +53,8 @@ function render() {
   const selected = group();
   $('channel-title').textContent = state.channel ?? '选择频道';
   $('observed').textContent = board ? `观测于 ${clock(board.observed_at)}` : '';
-  $('policy-version').textContent = board ? `当前策略 v${board.policy.version}` : '';
+  $('policy-version').textContent = board
+    ? `当前策略 v${board.policy.version} · 对账规则 v${board.result_rule.version}` : '';
   for (const item of document.querySelectorAll('[data-needs-channel]')) item.hidden = !board;
   $('groups').replaceChildren(...(board?.groups.length ? board.groups.map(item =>
     selectButton(item.paused ? `${item.name} · 暂停` : item.name, item.name === state.group, () => {
@@ -133,8 +134,17 @@ async function trace(id) {
     if (item.parent_id) label.append(`· 源投递 #${item.parent_id} `);
     label.append(status(item.state));
     const entries = node('ul', '', 'trace-attempts');
-    entries.append(...item.attempts.map(a => node('li',
-      `第 ${a.number} 次 · ${a.worker} · ${TEXT[a.outcome]} · ${clock(a.started)}${a.reason ? ` · ${a.reason}` : ''}`)));
+    entries.append(...item.attempts.map(a => {
+      const text = `第 ${a.number} 次 · ${a.worker} · ${TEXT[a.outcome]} · ${clock(a.started)}`
+        + `${a.reason ? ` · ${a.reason}` : ''}`;
+      const li = node('li', text);
+      if (a.result_rule != null) {
+        li.append(node('p',
+          `结果：刻度 ${a.canonical_amount} · 单位 ${a.result_unit} · 规则 v${a.result_rule} · ${TEXT[a.result_reason] || a.result_reason}`,
+          'muted'));
+      }
+      return li;
+    }));
     section.append(label, entries);
     return section;
   }));

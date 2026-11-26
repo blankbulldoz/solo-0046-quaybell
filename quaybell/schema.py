@@ -1,4 +1,5 @@
-VERSION = 1
+VERSION = 2
+
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS channels (
   name TEXT PRIMARY KEY,
@@ -61,7 +62,21 @@ CREATE TABLE IF NOT EXISTS attempts (
   finished REAL,
   reason TEXT,
   receipt TEXT,
+  result_rule INTEGER,
+  result_unit TEXT,
+  canonical_amount TEXT,
+  result_digest TEXT,
+  result_reason TEXT,
   UNIQUE(delivery_id, number)
+);
+CREATE TABLE IF NOT EXISTS result_rules (
+  channel TEXT NOT NULL REFERENCES channels(name),
+  version INTEGER NOT NULL,
+  base_unit TEXT NOT NULL,
+  tick_scale INTEGER NOT NULL CHECK(tick_scale BETWEEN 0 AND 12),
+  units TEXT NOT NULL,
+  created REAL NOT NULL,
+  PRIMARY KEY(channel, version)
 );
 CREATE TABLE IF NOT EXISTS journal (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,3 +94,24 @@ CREATE UNIQUE INDEX IF NOT EXISTS one_open_attempt ON attempts(delivery_id) WHER
 CREATE INDEX IF NOT EXISTS message_channel ON messages(channel,published,id);
 CREATE INDEX IF NOT EXISTS journal_message ON journal(message_id,id);
 '''
+
+# Version 2 起，ACK 可携带产量结果；下列列以可空方式追加，旧尝试保持空值。
+RESULT_COLUMNS = (
+    "ALTER TABLE attempts ADD COLUMN result_rule INTEGER",
+    "ALTER TABLE attempts ADD COLUMN result_unit TEXT",
+    "ALTER TABLE attempts ADD COLUMN canonical_amount TEXT",
+    "ALTER TABLE attempts ADD COLUMN result_digest TEXT",
+    "ALTER TABLE attempts ADD COLUMN result_reason TEXT",
+)
+
+
+def migrate(db, previous):
+    """把已存在的旧版存储推进到当前版本，并为既有频道补建第一版结果规则。"""
+    if previous < 2:
+        for statement in RESULT_COLUMNS:
+            db.execute(statement)
+        existing = [row['name'] for row in db.execute('SELECT name FROM channels')]
+        from . import reconcile
+        for channel in existing:
+            if db.execute('SELECT 1 FROM result_rules WHERE channel=?', (channel,)).fetchone() is None:
+                reconcile.seed_default(db, channel)

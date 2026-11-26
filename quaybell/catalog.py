@@ -1,4 +1,4 @@
-from . import inputs, journal, policy
+from . import inputs, journal, policy, reconcile
 from .errors import conflict, missing
 
 
@@ -19,8 +19,10 @@ def create(db, raw, now):
         raise conflict('频道已存在')
     db.execute('INSERT INTO channels VALUES (?,?)', (channel, now))
     first = policy.create(db, channel, 1, config, now)
-    journal.append(db, channel, now, 'channel_created', {'version': 1})
-    return get(db, channel) | {'policy': first}
+    result_rule = reconcile.seed_default(db, channel, now)
+    journal.append(db, channel, now, 'channel_created',
+                   {'version': 1, 'result_rule': result_rule['version']})
+    return get(db, channel) | {'policy': first, 'result_rule': result_rule}
 
 
 def update_policy(db, channel, raw, now):
@@ -30,6 +32,11 @@ def update_policy(db, channel, raw, now):
     journal.append(db, channel, now, 'policy_revised', {'version': record['version']})
     return record
 
+
+def update_result_rule(db, channel, raw, now):
+    inputs.require(raw, ('base_unit', 'tick_scale', 'units', 'expected'))
+    expected = inputs.integer(raw['expected'], 1, 2**63-2, '当前规则版号')
+    return reconcile.revise(db, channel, expected, raw, now)
 
 def list_all(db):
     return [dict(row) for row in db.execute('SELECT * FROM channels ORDER BY name')]

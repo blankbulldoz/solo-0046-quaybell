@@ -1,6 +1,6 @@
 from collections import Counter
 
-from . import catalog, deadletters, eligibility, inspection, policy, subscriptions
+from . import catalog, deadletters, eligibility, inspection, policy, reconcile, subscriptions
 
 
 def board(db, channel, now):
@@ -14,5 +14,6 @@ def board(db, channel, now):
                 sample.append(item)
         summary.append(group | {'counts': dict(counts), 'sample': sample})
     return {'channel': channel, 'observed_at': now, 'policy': policy.read(db, channel),
+            'result_rule': reconcile.read(db, channel),
             'groups': summary, 'messages': inspection.recent(db, channel),
             'dead': deadletters.list_recent(db, channel)}

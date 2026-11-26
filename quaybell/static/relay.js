@@ -4,6 +4,9 @@ export const TEXT = {
   leased: '租约中', expired: '租约超时', acked: '已确认', nacked: '已拒绝',
   waiting: '等待中', dead: '死信', open: '未应答', leased_event: '发放租约',
   published: '已发布', redriven: '重投',
+  result_accepted: '结果已接收', result_repeated: '等量重交',
+  legacy_ack_without_result: '旧版无结果确认',
+  result_amount_conflict: '归一化量不一致', result_rule_changed: '规则版本不一致',
 };
 
 export async function api(path, data) {

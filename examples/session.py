@@ -48,11 +48,17 @@ class Session:
     def claim(self, limit=1, worker='bench-worker'):
         return self.request(GROUP + '/claim', {'worker': worker, 'limit': limit})['items']
 
-    def settle(self, item, mode='ack', expected=200):
+    def settle(self, item, mode='ack', expected=200, result=None):
         data = {'token': item['lease']['token']}
         if mode == 'nack':
             data['reason'] = '下游拒绝校验帧'
+        if result is not None:
+            data['result'] = result
         return self.request(f"/deliveries/{item['delivery_id']}/{mode}", data, expected)
+
+    def result_rule(self, rule, expected=201):
+        active = self.request(CHANNEL)['result_rule']['version']
+        return self.request(CHANNEL + '/result-rule', dict(rule, expected=active), expected)
 
 
 def envelope(key='signal-1', lane='coil-north', **extra):
