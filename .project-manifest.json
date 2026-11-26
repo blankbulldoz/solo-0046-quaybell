@@ -102,6 +102,11 @@
       "responsibility": "可下载快照及可复算摘要"
     },
     {
+      "id": "batches",
+      "path": "quaybell/batches.py",
+      "responsibility": "设备批次分片暂存、幂等重发、封口发布、取消释放与回执取回"
+    },
+    {
       "id": "codec",
       "path": "quaybell/codec.py",
       "responsibility": "规范 JSON 与摘要"
@@ -421,6 +426,31 @@
         "evidence",
         "inspection",
         "codec"
+      ]
+    },
+    {
+      "id": "batch",
+      "name": "分片上传设备批次并封口领取",
+      "entry": "POST /v1/channels/{channel}/batches",
+      "success": "重启后可重发分片并继续封口，夹发的普通消息按投递号先于批次被消费，封口回执可重复取回",
+      "failure": "同片不同内容返回 409，取消后封口返回 409 且同顺序键普通发布立即可领",
+      "verification": "python3 -m examples.walkthrough batch",
+      "steps": [
+        "通过 POST /v1/channels/{channel}/batches 建立批次并向 .../batches/{id}/shards 幂等上传分片",
+        "分片只暂存不产生投递；进程重启（同一 SQLite 文件）后分片与批次状态仍在，可重发同片并继续",
+        "两片之间同顺序键的普通发布先于封口批次入队，消费者确认普通消息后才领到整批，次序由投递号和轨迹复验",
+        "POST .../seal 封口并返回标准发布回执，重复封口或 GET .../receipt 取回同一回执",
+        "POST .../cancel 取消批次，不留下顺序键屏障，之后同键普通发布可立即领取"
+      ],
+      "module_ids": [
+        "batches",
+        "publication",
+        "routing",
+        "delivery",
+        "claims",
+        "eligibility",
+        "journal",
+        "persistence"
       ]
     }
   ],

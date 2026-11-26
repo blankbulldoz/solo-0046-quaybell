@@ -17,6 +17,13 @@ def claim(db, channel, group, raw, now):
         message = publication.get(db, item['message_id'])
         journal.append(db, channel, now, 'leased', {'delivery_id': item['id'], 'attempt': lease['number'],
                                                    'worker': worker, 'expires': lease['expires']}, message['id'])
-        results.append(dict(delivery_id=item['id'], message_id=message['id'], lane=item['lane'],
-                            policy=item['policy'], lease=lease, envelope=message['envelope']))
+        claimed = dict(delivery_id=item['id'], message_id=message['id'], lane=item['lane'],
+                       policy=item['policy'], lease=lease, envelope=message['envelope'])
+        env = message['envelope'] if isinstance(message['envelope'], dict) else {}
+        if env.get('batch'):
+            payload = env.get('payload') if isinstance(env.get('payload'), dict) else {}
+            claimed.update(batch_id=payload.get('batch_id'), batch=True,
+                           parts=payload.get('parts'), shards=payload.get('shards'),
+                           part_count=payload.get('part_count'))
+        results.append(claimed)
     return {'paused': False, 'items': results}

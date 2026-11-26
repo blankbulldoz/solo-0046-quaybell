@@ -31,11 +31,24 @@ class RelayRequest(BaseHTTPRequestHandler):
     def do_POST(self):
         self.handle_request('POST')
 
+    def do_PUT(self):
+        self.handle_request('PUT')
+
+    def do_PATCH(self):
+        self.handle_request('PATCH')
+
+    def do_DELETE(self):
+        self.handle_request('DELETE')
+
     def handle_request(self, method):
         try:
             reply = self.resolve_route(method)
         except RelayError as exc:
             reply = protocol.Reply({'error': exc.code, 'message': str(exc)}, exc.status)
+        except sqlite3.IntegrityError:
+            LOG.warning('完整性冲突', exc_info=True)
+            reply = protocol.Reply({'error': 'conflict',
+                                    'message': '请求与已有持久记录冲突，请按原身份重试或取回回执'}, 409)
         except sqlite3.OperationalError as exc:
             if getattr(exc, 'sqlite_errorcode', 0) & 255 in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
                 reply = protocol.Reply({'error': 'busy', 'message': '中继存储繁忙，请稍后按原身份重试'}, 503)
@@ -70,7 +83,10 @@ class RelayRequest(BaseHTTPRequestHandler):
         if method == 'GET':
             with self.server.persistence.session() as db:
                 return api_reads.read(db, action, args, self.server.clock())
-        raw = protocol.receive(self)
+        if method == 'DELETE':
+            raw = protocol.receive_optional(self)
+        else:
+            raw = protocol.receive(self)
         with self.server.persistence.session(write=action != 'preview') as db:
             if action == 'preview':
                 return api_reads.check_route(db, args[0], raw)

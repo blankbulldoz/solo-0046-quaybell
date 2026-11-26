@@ -4,7 +4,7 @@ from . import codec
 from .errors import RelayError
 
 JSON = 'application/json; charset=utf-8'
-MAX_REQUEST = 32768
+MAX_REQUEST = 1048576
 
 
 @dataclass(frozen=True)
@@ -23,15 +23,28 @@ class Reply:
 def receive(request):
     if request.headers.get('Transfer-Encoding'):
         raise RelayError(400, 'invalid_framing', '请求须声明固定长度')
-    if request.headers.get_content_type() != 'application/json':
-        raise RelayError(415, 'unsupported_media_type', '请求须使用 application/json')
     lengths = request.headers.get_all('Content-Length', [])
     if len(lengths) != 1 or not lengths[0].isascii() or not lengths[0].isdecimal():
         raise RelayError(400, 'invalid_length', '请求须声明有效且唯一的长度')
     if len(lengths[0]) > 8 or int(lengths[0]) > MAX_REQUEST:
-        raise RelayError(413, 'request_too_large', '请求最多 32 KiB')
+        raise RelayError(413, 'request_too_large', '请求体超出允许大小')
     length = int(lengths[0])
+    if length == 0:
+        # 空体的封口/取消/处置重发按空对象处理，字段校验仍会拦截真正缺参的请求。
+        return {}
+    if request.headers.get_content_type() != 'application/json':
+        raise RelayError(415, 'unsupported_media_type', '请求须使用 application/json')
     raw = request.rfile.read(length)
     if len(raw) != length:
         raise RelayError(400, 'short_request', '请求体不完整')
     return codec.object_body(raw)
+
+
+def receive_optional(request):
+    """DELETE 等动作允许完全没有请求体，此时按空 JSON 对象处理。"""
+    lengths = request.headers.get_all('Content-Length', [])
+    if request.headers.get('Transfer-Encoding') and not lengths:
+        raise RelayError(400, 'invalid_framing', '请求须声明固定长度')
+    if not lengths or all(value == '0' for value in lengths):
+        return {}
+    return receive(request)

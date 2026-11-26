@@ -18,6 +18,29 @@
     </form>
   </details>
   <details data-needs-channel>
+    <summary>设备批次收件</summary>
+    <form id="batch" class="compact">
+      <p class="muted">分批上传设备批次，封口后整批才进入顺序队列；重启后可用同一批次号继续重发与封口。</p>
+      <div class="pair">
+        <label>批次键（可留空）<input name="batch_key" placeholder="device-batch-001"></label>
+        <label>顺序键<input name="lane" value="coil-north" required></label>
+      </div>
+      <div class="pair">
+        <label>批次号 / 引用<input name="ref" placeholder="建批后自动填入"></label>
+        <label>分片序号<input name="index" type="number" min="0" value="0"></label>
+      </div>
+      <label>分片载荷（JSON）<textarea name="payload" rows="2">{"reading":48,"unit":"mV"}</textarea></label>
+      <div class="button-row">
+        <button name="mode" value="create">建批</button>
+        <button name="mode" value="shard" class="quiet">传分片</button>
+        <button name="mode" value="seal">封口</button>
+        <button name="mode" value="receipt" type="submit" class="quiet">取回回执</button>
+        <button name="mode" value="cancel" class="danger">取消批次</button>
+      </div>
+      <output class="muted" id="batch-result" aria-live="polite"></output>
+    </form>
+  </details>
+  <details data-needs-channel>
     <summary>领取和应答</summary>
     <form id="claim" class="compact">
       <div class="pair">

@@ -11,10 +11,11 @@ Quaybell 是面向内部服务集成的持久消息中间件。应用通过 HTTP
 - 明确拒绝的退避以处置时间起算，超时退避以租约截止时间起算。退避从原策略初始值指数增长，最长一小时。尝试数用尽时，投递进入死信。重投追加一条本组投递，绑定当前策略并加入所在顺序键的队尾。每条死信只追加一个直接后继，后继可独立失败。
 - 清理时按消息发布时绑定的保留秒数比较年龄，并检查整条消息的所有派生分发。清理在写事务内重新计算，删除原信封、原回执、尝试和消息级审计。之后原生产键可复用。频道级清理记录保留被删 ID。
 - 租约、公示时间和就绪时间都是 Unix 秒。同步 API 返回 JSON。证据导出绑定一个观察时间和读取快照，去除租约凭据并提供内容摘要。
+- 设备批次收件先建批次再分次上传分片；分片在封口前只进暂存表，不生成消息或投递，因此不可领取也不占顺序键。批次与分片持久化，进程重启后同号同内容分片重发复用原记录，可继续补齐与封口。封口在一个写事务内把有序分片物化成一条消息并按当下订阅生成分发，故夹在分片之间、进入同一顺序键的普通发布取得更小投递号，普通消费者先领普通消息、确认后再领整批，次序由投递号和消息轨迹复验。取消把批次置为终态且从不留下顺序键屏障，取消后同键普通发布立即可领，对已取消批次封口返回 409。封口回执与普通发布回执同形并持久化，重发封口返回 `repeated=true` 的同一回执，也可经批次回执读接口取回。
 
 ## 职责
 
-`catalog`、`policy` 和 `subscriptions` 管辖拓扑与版本；`envelope`、`routing` 和 `publication` 从信封生成分发；`delivery`、`eligibility`、`attempts` 和 `claims` 一起决定谁能领取；`disposition`、`expiry` 和 `outcomes` 确保处置及重试一致；`inspection`、`overview`、`retention` 和 `evidence` 提供查询和保留处置。`persistence` 定义 SQLite 事务边界，接入层负责请求体和响应，控制台使用单页的公开 JSON 接口。
+`catalog`、`policy` 和 `subscriptions` 管辖拓扑与版本；`envelope`、`routing` 和 `publication` 从信封生成分发，`batches` 负责设备批次的分片暂存、幂等重发、封口物化、取消释放与回执取回；`delivery`、`eligibility`、`attempts` 和 `claims` 一起决定谁能领取；`disposition`、`expiry` 和 `outcomes` 确保处置及重试一致；`inspection`、`overview`、`retention` 和 `evidence` 提供查询和保留处置。`persistence` 定义 SQLite 事务边界，接入层负责请求体和响应，控制台使用单页的公开 JSON 接口。
 
 ## 验证边界
 

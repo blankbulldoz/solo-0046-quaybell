@@ -171,6 +171,41 @@ onForm('publish', async (values, mode) => {
     : `消息 #${reply.message_id} · ${reply.repeated ? '已复用原回执' : '已发布'} · ${Object.keys(reply.fanout).length} 个消费组`;
   if (mode !== 'preview') await refresh();
 });
+onForm('batch', async (values, mode) => {
+  const out = $('batch-result');
+  const root = channelPath();
+  if (mode === 'create') {
+    const body = {producer: 'console-publisher', lane: values.lane};
+    if (values.batch_key) body.key = values.batch_key;
+    const reply = await api(`${root}/batches`, body);
+    $('batch').elements.ref.value = String(reply.batch_id);
+    out.textContent = `已建批次 #${reply.batch_id}（${reply.state}），可继续传分片后封口`;
+    return;
+  }
+  const ref = (values.ref || '').trim();
+  if (!ref) throw new Error('请先建批或填写批次号 / 引用');
+  const base = `${root}/batches/${ref}`;
+  if (mode === 'shard') {
+    const payload = parse(values.payload || '{}', '分片载荷');
+    const reply = await api(`${base}/shards`, {index: Number(values.index || 0), payload});
+    out.textContent = `分片 #${reply.index} ${reply.repeated ? '已存在并复用' : '已写入'}（批次 ${reply.state}）`;
+  } else if (mode === 'seal') {
+    const reply = await api(`${base}/seal`, {});
+    out.textContent = reply.repeated
+      ? `重复封口：复用消息 #${reply.message_id}`
+      : `已封口：整批为消息 #${reply.message_id}，分发 ${Object.values(reply.fanout || {}).join('、') || '无匹配组'}`;
+    await refresh();
+  } else if (mode === 'cancel') {
+    const reply = await api(`${base}/cancel`, {});
+    out.textContent = `批次 #${reply.batch_id} ${reply.repeated ? '此前已取消' : '已取消'}，该顺序键不再被阻挡`;
+    await refresh();
+  } else if (mode === 'receipt') {
+    const reply = await api(`${base}/receipt`);
+    out.textContent = reply.message_id
+      ? `封口回执：消息 #${reply.message_id} · ${reply.state} · 分片 ${reply.part_count} · v${reply.policy}`
+      : `批次当前 ${reply.state} · 分片 ${reply.part_count}`;
+  }
+});
 onForm('claim', async ({worker, limit}) => {
   if (!group()) return;
   const channel = state.channel, selected = state.group;

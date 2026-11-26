@@ -78,4 +78,38 @@ CREATE INDEX IF NOT EXISTS attempt_deadline ON attempts(expires,id) WHERE outcom
 CREATE UNIQUE INDEX IF NOT EXISTS one_open_attempt ON attempts(delivery_id) WHERE outcome='open';
 CREATE INDEX IF NOT EXISTS message_channel ON messages(channel,published,id);
 CREATE INDEX IF NOT EXISTS journal_message ON journal(message_id,id);
+CREATE TABLE IF NOT EXISTS batches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  channel TEXT NOT NULL REFERENCES channels(name),
+  producer TEXT NOT NULL,
+  batch_key TEXT,
+  lane TEXT NOT NULL,
+  tags TEXT NOT NULL DEFAULT '{}',
+  options TEXT NOT NULL DEFAULT '{}',
+  state TEXT NOT NULL DEFAULT 'open' CHECK(state IN ('open','sealed','cancelled')),
+  message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
+  receipt TEXT,
+  fingerprint TEXT NOT NULL,
+  created REAL NOT NULL,
+  updated REAL NOT NULL,
+  sealed_at REAL,
+  cancelled_at REAL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS batches_client_key
+  ON batches(channel, producer, batch_key) WHERE batch_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS batches_channel ON batches(channel, id);
+CREATE TABLE IF NOT EXISTS batch_parts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  batch_id INTEGER NOT NULL REFERENCES batches(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL,
+  part_key TEXT,
+  payload TEXT NOT NULL,
+  digest TEXT NOT NULL,
+  size INTEGER NOT NULL DEFAULT 0,
+  created REAL NOT NULL,
+  UNIQUE(batch_id, position)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS batch_parts_named
+  ON batch_parts(batch_id, part_key) WHERE part_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS batch_parts_order ON batch_parts(batch_id, position, id);
 '''
