@@ -1,4 +1,4 @@
-from . import catalog, deadletters, evidence, inspection, overview, retention, routing
+from . import catalog, deadletters, evidence, inspection, investigation, overview, retention, routing
 from .protocol import Reply
 
 
@@ -17,6 +17,12 @@ def read(db, action, args, now):
         return Reply(evidence.export_trace(db, int(args[0]), now),
                      content_type='application/json; charset=utf-8',
                      filename=f'quaybell-trace-{args[0]}.json')
+    if action == 'investigate':
+        return Reply(investigation.investigate(db, int(args[0]), now))
+    if action == 'handoff':
+        return Reply(evidence.export_handoff(db, int(args[0]), now),
+                     content_type='application/json; charset=utf-8',
+                     filename=f'quaybell-handoff-{args[0]}.json')
     raise AssertionError(action)
 
 

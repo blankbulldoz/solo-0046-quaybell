@@ -6,6 +6,15 @@
   <div class="stats" id="stats" aria-label="投递分类计数"></div>
   <section class="table-section">
     <div class="section-head"><h2>消费组队列</h2><span class="muted" id="queue-group"></span></div>
+    <form id="investigate" class="compact">
+      <div class="pair">
+        <label>调查投递号<input name="delivery_id" type="number" min="1" required inputmode="numeric"
+          placeholder="告警单上的分发号"></label>
+      </div>
+      <div class="button-row"><button name="mode" value="investigate">只读调查</button>
+        <button name="mode" value="handoff" class="quiet" type="submit">导出交接证据</button></div>
+      <output class="muted" id="investigate-result" aria-live="polite"></output>
+    </form>
     <div class="scroll"><table>
       <thead><tr><th scope="col">投递</th><th scope="col">顺序键</th><th scope="col">当前状态</th><th scope="col">队首</th><th scope="col">最早就绪</th></tr></thead>
       <tbody id="queue-rows"></tbody>
@@ -25,4 +34,18 @@
       <tbody id="dead-rows"></tbody>
     </table></div>
   </section>
+  <dialog id="investigation" aria-labelledby="investigation-title">
+    <div class="dialog-head">
+      <h2 id="investigation-title">积压调查</h2>
+      <form method="dialog"><button class="quiet" aria-label="关闭调查结果">关闭</button></form>
+    </div>
+    <p class="muted" id="investigation-meta"></p>
+    <div id="investigation-summary"></div>
+    <h3>同顺序键未处置队列</h3>
+    <div class="scroll"><table>
+      <thead><tr><th scope="col">投递</th><th scope="col">状态</th><th scope="col">队首</th><th scope="col">可采取动作</th><th scope="col">就绪/截止</th></tr></thead>
+      <tbody id="investigation-rows"></tbody>
+    </table></div>
+    <a id="handoff-export" class="button-link">下载交接证据</a>
+  </dialog>
 </section>

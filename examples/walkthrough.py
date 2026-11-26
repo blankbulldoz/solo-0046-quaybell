@@ -207,9 +207,81 @@ def export(client):
     return {'format': record['format'], 'sha256': digest}
 
 
+def handoff(client):
+    client.channel()
+    client.subscribe()
+    hot = [client.publish(f'hot-{index:02}', 'coil-north') for index in range(1, 22)]
+    alert_id = hot[-1]['fanout']['oscillator']
+    board = client.request(CHANNEL)['groups'][0]
+    assert len(board['sample']) == 20
+    assert alert_id not in {row['id'] for row in board['sample']}
+
+    first = client.claim()[0]
+    head_id = first['delivery_id']
+    live = client.request(f'/deliveries/{alert_id}/investigation')
+    assert live['blocked_by'] == head_id and live['lane_size'] == 21
+    assert live['head']['cause'] == 'leased' and live['head']['actionable'] == 'settle'
+    assert live['target']['actionable'] == 'none'
+
+    client.request(GROUP + '/pause', {'paused': True})
+    paused_view = client.request(f'/deliveries/{alert_id}/investigation')
+    assert paused_view['group']['paused'] is True
+    assert paused_view['head']['cause'] == 'leased' and paused_view['head']['actionable'] == 'settle'
+    client.settle(first)
+    waiting_view = client.request(f'/deliveries/{alert_id}/investigation')
+    assert waiting_view['blocked_by'] == head_id + 1
+    assert waiting_view['head']['cause'] == 'paused' and waiting_view['head']['actionable'] == 'none'
+    client.request(GROUP + '/pause', {'paused': False})
+
+    leased = client.claim()[0]
+    client.tick(5)
+    expired_view = client.request(f'/deliveries/{alert_id}/investigation')
+    assert expired_view['head']['id'] == leased['delivery_id']
+    assert expired_view['head']['state'] == 'leased' and expired_view['head']['cause'] == 'expired'
+    assert expired_view['head']['actionable'] == 'none'
+    assert expired_view['head']['open_attempt']['outcome'] == 'open'
+
+    frozen = client.request(f'/deliveries/{alert_id}/handoff')
+    assert frozen['format'] == 'quaybell-handoff/1' and frozen['observed_at'] == expired_view['observed_at']
+    assert frozen['live'] == expired_view
+    digest = frozen.pop('sha256')
+    assert fingerprint(pack(frozen)) == digest
+    assert frozen['conclusion']['head_cause'] == 'expired'
+    assert frozen['conclusion']['blocked_by'] == leased['delivery_id']
+    assert first['lease']['token'] not in pack(frozen) and leased['lease']['token'] not in pack(frozen)
+
+    recovered = client.request('/sweep', {'limit': 1})
+    assert recovered['recovered'][0]['delivery_id'] == leased['delivery_id']
+    backoff_view = client.request(f'/deliveries/{alert_id}/investigation')
+    assert backoff_view['head']['id'] == leased['delivery_id']
+    assert backoff_view['head']['state'] == 'waiting' and backoff_view['head']['cause'] == 'delayed'
+    assert frozen['conclusion']['head_cause'] == 'expired'
+
+    client.tick(3)
+    retry_item = client.claim()[0]
+    assert retry_item['delivery_id'] == leased['delivery_id'] and retry_item['lease']['number'] == 2
+    client.settle(retry_item)
+    ready_view = client.request(f'/deliveries/{alert_id}/investigation')
+    assert ready_view['head']['cause'] == 'ready' and ready_view['head']['actionable'] == 'claim'
+    while True:
+        batch = client.claim(30)
+        if not batch:
+            break
+        for item in batch:
+            client.settle(item)
+    empty = client.request(f'/deliveries/{alert_id}/investigation')
+    assert empty['lane_queue'] == [] and empty['head'] is None
+    assert empty['target']['cause'] == 'terminal' and empty['note']
+    client.request('/deliveries/99999/investigation', expected=404)
+    return {'alert_delivery': alert_id, 'lane_depth': 21,
+            'frozen_head_cause': frozen['conclusion']['head_cause'],
+            'today_head_cause': backoff_view['head']['cause'],
+            'final_target_state': empty['target']['state']}
+
+
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             redrive=redrive, board=board, handoff=handoff, retention=retention, export=export)
 
 
 def main():

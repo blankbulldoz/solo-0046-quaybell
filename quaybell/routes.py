@@ -9,6 +9,7 @@ PATTERNS = {
     'GET': (
         ('/v1/channels', 'channels'), (CHANNEL, 'board'), (CHANNEL + '/dead', 'dead'),
         (MESSAGE, 'trace'), (MESSAGE + '/evidence', 'export'), (CHANNEL + '/retention', 'retention'),
+        (DELIVERY + '/investigation', 'investigate'), (DELIVERY + '/handoff', 'handoff'),
     ),
     'POST': (
         ('/v1/channels', 'create_channel'), (CHANNEL + '/policy', 'revision'),

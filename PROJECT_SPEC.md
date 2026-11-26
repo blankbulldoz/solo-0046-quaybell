@@ -11,10 +11,11 @@ Quaybell 是面向内部服务集成的持久消息中间件。应用通过 HTTP
 - 明确拒绝的退避以处置时间起算，超时退避以租约截止时间起算。退避从原策略初始值指数增长，最长一小时。尝试数用尽时，投递进入死信。重投追加一条本组投递，绑定当前策略并加入所在顺序键的队尾。每条死信只追加一个直接后继，后继可独立失败。
 - 清理时按消息发布时绑定的保留秒数比较年龄，并检查整条消息的所有派生分发。清理在写事务内重新计算，删除原信封、原回执、尝试和消息级审计。之后原生产键可复用。频道级清理记录保留被删 ID。
 - 租约、公示时间和就绪时间都是 Unix 秒。同步 API 返回 JSON。证据导出绑定一个观察时间和读取快照，去除租约凭据并提供内容摘要。
+- 积压调查是只读入口，不发放租约、不回收到期尝试。它按消费组和顺序键返回完整未处置队列、队头、每条当前原因和现场可采取动作，不受看板样本上限约束。交接证据（`quaybell-handoff/1`）冻结调查时刻的结论与现场快照；接班人的重新调查代表今天的读数，不得用今天的队头覆盖冻结结论。已终态投递不再占用顺序键。
 
 ## 职责
 
-`catalog`、`policy` 和 `subscriptions` 管辖拓扑与版本；`envelope`、`routing` 和 `publication` 从信封生成分发；`delivery`、`eligibility`、`attempts` 和 `claims` 一起决定谁能领取；`disposition`、`expiry` 和 `outcomes` 确保处置及重试一致；`inspection`、`overview`、`retention` 和 `evidence` 提供查询和保留处置。`persistence` 定义 SQLite 事务边界，接入层负责请求体和响应，控制台使用单页的公开 JSON 接口。
+`catalog`、`policy` 和 `subscriptions` 管辖拓扑与版本；`envelope`、`routing` 和 `publication` 从信封生成分发；`delivery`、`eligibility`、`attempts` 和 `claims` 一起决定谁能领取；`disposition`、`expiry` 和 `outcomes` 确保处置及重试一致；`inspection`、`investigation`、`overview`、`retention` 和 `evidence` 提供查询、只读积压调查、保留处置和可冻结证据。`persistence` 定义 SQLite 事务边界，接入层负责请求体和响应，控制台使用单页的公开 JSON 接口。
 
 ## 验证边界
 

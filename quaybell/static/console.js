@@ -145,6 +145,47 @@ async function trace(id) {
   $('trace').showModal();
 }
 
+function renderInvestigation(facts) {
+  $('investigation-title').textContent = `积压调查 · 投递 #${facts.target.id}`;
+  const group = `${facts.channel}/${facts.group.name}${facts.group.paused ? '（已暂停）' : ''}`;
+  $('investigation-meta').textContent =
+    `${group} · 顺序键 ${facts.lane} · 观测于 ${clock(facts.observed_at)} · 同键未处置 ${facts.lane_size} 条`;
+  const head = facts.head;
+  const summary = node('div', '', 'investigation-summary');
+  if (!head) {
+    summary.append(node('p', facts.note || '该顺序键已无未处置投递'));
+  } else {
+    const blocked = facts.blocked_by
+      ? `它被同键队头 #${facts.blocked_by} 阻挡` : '它本身就是队头';
+    summary.append(node('p', `队头 #${head.id}：${TEXT[head.cause]} · ${TEXT[head.actionable]}`),
+      node('p', `调查目标 #${facts.target.id}：${TEXT[facts.target.cause]} · ${blocked}`, 'muted'));
+  }
+  $('investigation-summary').replaceChildren(summary);
+  rows('investigation-rows', facts.lane_queue.map(item => {
+    const when = item.state === 'leased' ? item.expires : item.ready_at;
+    return [node('span', `#${item.id}${item.id === facts.target.id ? '（告警单）' : ''}`),
+      status(item.cause), `#${item.head_id}`, TEXT[item.actionable], clock(when)];
+  }), 5, '顺序键上没有未处置投递');
+  $('handoff-export').href = `/v1/deliveries/${facts.target.id}/handoff`;
+  $('investigation').showModal();
+}
+
+onForm('investigate', async ({delivery_id}, mode) => {
+  const id = Number(delivery_id);
+  if (!Number.isInteger(id) || id <= 0) {
+    notice('请填写有效的投递号', true);
+    return;
+  }
+  if (mode === 'handoff') {
+    window.location.assign(`/v1/deliveries/${id}/handoff`);
+    return;
+  }
+  const facts = await api(`/deliveries/${id}/investigation`);
+  $('investigate-result').textContent =
+    facts.head ? `队头 #${facts.head.id}：${TEXT[facts.head.cause]}` : '顺序键已清空';
+  renderInvestigation(facts);
+});
+
 onForm('create-channel', async ({name}) => {
   await api('/channels', {name});
   await choose(name);
