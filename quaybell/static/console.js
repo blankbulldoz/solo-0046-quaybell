@@ -28,6 +28,7 @@ async function choose(channel) {
     state.channel = channel;
     state.group = null;
     state.board = null;
+    state.publishPreview = null;
     $('publication-result').textContent = '';
     resetRetention();
   }
@@ -161,15 +162,55 @@ onForm('create-group', async ({name, tags}) => {
 });
 onForm('publish', async (values, mode) => {
   const channel = state.channel;
-  const reply = await api(`${channelPath()}/${mode || 'messages'}`, {
-    ...values, tags: parse(values.tags, '标签'), payload: parse(values.payload, '载荷'),
+  const output = $('publication-result');
+  const body = {
+    producer: values.producer,
+    key: values.key,
+    lane: values.lane,
+    tags: parse(values.tags, '标签'),
+    payload: parse(values.payload, '载荷'),
     delay_seconds: Number(values.delay_seconds),
-  });
-  if (state.channel !== channel) return;
-  $('publication-result').textContent = mode === 'preview'
-    ? (reply.groups.length ? `匹配：${reply.groups.join('、')}` : '当前无匹配消费组')
-    : `消息 #${reply.message_id} · ${reply.repeated ? '已复用原回执' : '已发布'} · ${Object.keys(reply.fanout).length} 个消费组`;
-  if (mode !== 'preview') await refresh();
+  };
+  if (mode === 'preview') {
+    const reply = await api(`${channelPath()}/preview`, body);
+    state.publishPreview = {channel, body: {...body}, reply};
+    output.dataset.error = 'false';
+    output.textContent = reply.groups.length
+      ? `已看到目标集合：${reply.groups.join('、')}。点击发布将按此集合确认。`
+      : '已看到空目标集合。点击发布将确认没有消费组。';
+    return reply;
+  }
+
+  const preview = state.publishPreview;
+  if (preview?.channel === channel) {
+    body.expected_groups = preview.reply.groups;
+    body.confirmation_token = preview.reply.confirmation_token;
+  }
+  try {
+    const reply = await api(`${channelPath()}/messages`, body);
+    if (state.channel !== channel) return;
+    output.dataset.error = 'false';
+    output.textContent = mode === 'preview'
+      ? ''
+      : `消息 #${reply.message_id} · ${reply.repeated ? '已取回原成功回执' : '已按确认范围发布'} · ${Object.keys(reply.fanout).length} 个消费组。重复点击发布可在丢回执后重取。`;
+    await refresh();
+    return reply;
+  } catch (problem) {
+    const review = problem.body?.diff || problem.body;
+    if (problem.body?.code === 'target_set_changed' || review?.added || review?.removed) {
+      output.dataset.error = 'true';
+      output.replaceChildren(
+        node('strong', '目标集合已变化，本次未发布'),
+        node('div', `新增匹配：${(review.added || []).join('、') || '无'}`),
+        node('div', `消失目标：${(review.removed || []).join('、') || '无'}`),
+        node('div', `当前集合：${(problem.body.actual_groups || []).join('、') || '（空）'}`),
+      );
+    } else {
+      output.dataset.error = 'true';
+      output.textContent = problem.message;
+    }
+    throw problem;
+  }
 });
 onForm('claim', async ({worker, limit}) => {
   if (!group()) return;

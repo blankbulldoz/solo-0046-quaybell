@@ -13,7 +13,8 @@
       </div>
       <label>标签<textarea name="tags" rows="2">{"feed":"telemetry"}</textarea></label>
       <label>消息载荷<textarea name="payload" rows="3">{"reading":48,"unit":"mV"}</textarea></label>
-      <div class="button-row"><button name="mode" value="preview" class="quiet">预查</button><button name="mode" value="messages">发布</button></div>
+      <div class="button-row"><button name="mode" value="preview" class="quiet">预查目标组</button><button name="mode" value="messages">按预查集合确认发布</button></div>
+      <p class="muted">先预查，再发布；提交时目标集合若已变化，会返回新增和消失的组。</p>
       <output class="muted" id="publication-result" aria-live="polite"></output>
     </form>
   </details>

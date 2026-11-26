@@ -22,6 +22,11 @@
       "responsibility": "预查和发布共用的精确匹配"
     },
     {
+      "id": "confirmation",
+      "path": "quaybell/confirmation.py",
+      "responsibility": "按可见目标集合做发布乐观确认和差异复核"
+    },
+    {
       "id": "envelope",
       "path": "quaybell/envelope.py",
       "responsibility": "稳定信封和标签校验"
@@ -194,6 +199,27 @@
         "routing",
         "subscriptions",
         "envelope"
+      ]
+    },
+    {
+      "id": "confirm",
+      "name": "按预查目标集合确认发布",
+      "entry": "POST /v1/channels/{channel}/messages",
+      "success": "目标集合未变时发布，丢失回执后的相同请求重取原回执",
+      "failure": "提交时目标集合变化返回 409 和可复核差异",
+      "verification": "python3 -m examples.walkthrough confirm",
+      "steps": [
+        "预查得到生产者看到的消费组集合",
+        "发布时回贴 expected_groups，服务端在写事务内重算并比较",
+        "新增不匹配订阅不改变目标集合，仍按原范围发布",
+        "目标集合不同时整笔拒绝并返回 added/removed 差异",
+        "成功后丢失回执并重发，复用首次 message_id、repeated:true 和原 fanout"
+      ],
+      "module_ids": [
+        "confirmation",
+        "routing",
+        "publication",
+        "subscriptions"
       ]
     },
     {

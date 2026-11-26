@@ -25,8 +25,8 @@ python3 -m quaybell --demo
 | `/channels/{channel}/policy` | POST | 全部四个策略值和预期版号 `expected` |
 | `/channels/{channel}/groups` | POST | `name`、可选匹配 `tags` |
 | `/channels/{channel}/groups/{group}/pause` | POST | `paused` 为布尔值 |
-| `/channels/{channel}/preview` | POST | 用发布信封查询当前标签匹配结果 |
-| `/channels/{channel}/messages` | POST | `producer`、`key`、`lane`、`payload`、可选 `tags`、`delay_seconds` |
+| `/channels/{channel}/preview` | POST | 用发布信封查询当前标签匹配结果，并返回目标集合确认令牌 |
+| `/channels/{channel}/messages` | POST | `producer`、`key`、`lane`、`payload`、可选 `tags`、`delay_seconds`；可回贴 `expected_groups`（或 `confirmation` 令牌）按预查集合确认 |
 | `/channels/{channel}/groups/{group}/claim` | POST | `worker`、可选 `limit`，返回含 `lease.token` 的领取项 |
 | `/deliveries/{id}/ack` | POST | `token` |
 | `/deliveries/{id}/nack` | POST | `token` 和 `reason` |
@@ -39,6 +39,20 @@ python3 -m quaybell --demo
 
 默认策略是 `lease_seconds=24`、`retry_seconds=3`、`max_attempts=3`、`retention_seconds=3600`。重发原生产键时复用初始匹配结果，内容变化则返回 409。如果应用侧副作用必须去重，应按消息和消费组身份设计处理键。重投需要按其业务语义明确将后继身份识别为有意重新处理。
 
+### 按看到的目标集合确认发布
+
+预查响应的 `groups` 是生产者当时看到的目标集合。发布时可在原信封外回贴 `"expected_groups": ["alpha", "beta"]`，或回贴预查返回的 `confirmation_token` / `confirmation` 对象。服务端在发布写事务内重新计算匹配集合：
+
+- 集合相同才写入消息和分发；预查后新增一个**不匹配**订阅不会改变集合，因此仍按原范围发布。
+- 集合不同则整笔不写入，返回 HTTP 409（`error:"conflict"`、`code/reason:"target_set_changed"`）。响应在顶层和 `details` 中给出 `expected_groups`、`actual_groups`、`added`、`removed`，并在 `diff` 中给出 `{"added":[...],"removed":[...]}`，便于复核后重新预查、重新确认。
+- 首次确认发布成功但回执丢失时，用同一生产身份和同一请求重发即可取回原回执：HTTP 200、`repeated:true`，且 `fanout` 固定为第一次提交的范围。即使之后新增了匹配订阅或确认集合已过期，已成功的原结果仍优先重放；也可用 `GET /v1/messages/{id}` 重取证据。
+
+`confirm` 工作流依次验证新增不匹配订阅、完全不同/由空变有的差异集合，以及成功后丢回执重发：
+
+```sh
+python3 -m examples.walkthrough confirm
+```
+
 以下载荷可发布到示例频道。默认延迟为零。
 
 ```json
@@ -49,6 +63,8 @@ python3 -m quaybell --demo
 
 ```sh
 python3 -m compileall -q quaybell examples
+python3 -m examples.walkthrough preview
+python3 -m examples.walkthrough confirm
 python3 -m examples.walkthrough claim
 python3 -m examples.walkthrough retention
 python3 -m examples.walkthrough export

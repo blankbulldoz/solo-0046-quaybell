@@ -27,6 +27,14 @@
       "command": "python3 -m examples.walkthrough preview"
     },
     {
+      "workflow_id": "confirm",
+      "command": "python3 -m examples.walkthrough confirm"
+    },
+    {
+      "workflow_id": "publish_confirm",
+      "command": "python3 -m examples.walkthrough publish_confirm"
+    },
+    {
       "workflow_id": "publish",
       "command": "python3 -m examples.walkthrough publish"
     },

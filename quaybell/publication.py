@@ -1,4 +1,4 @@
-from . import catalog, codec, delivery, journal, policy, routing
+from . import catalog, codec, confirmation, delivery, journal, policy, routing
 from .envelope import Envelope
 from .errors import conflict, missing
 
@@ -18,6 +18,7 @@ def receipt(db, message, repeated):
 
 def publish(db, channel, raw, now):
     catalog.get(db, channel)
+    target_confirmation = confirmation.from_request(raw)
     envelope = Envelope.from_input(raw)
     encoded = envelope.encoded()
     digest = codec.fingerprint(encoded)
@@ -26,15 +27,21 @@ def publish(db, channel, raw, now):
     if existing:
         if existing['fingerprint'] != digest or existing['envelope'] != encoded:
             raise conflict('同一生产键已用于另一条消息')
+        # A lost response is retried with the same confirmation.  The first
+        # receipt is the promise that remains retrievable even if routing has
+        # changed since that successful commit.
         return receipt(db, existing, True)
     active = policy.read(db, channel)
+    matched = routing.matching(db, channel, envelope.tags)
+    actual_groups = [group['name'] for group in matched]
+    confirmation.ensure(target_confirmation, actual_groups)
     ready_at = now + envelope.delay_seconds
     key = db.execute('''INSERT INTO messages(channel,producer,dedup_key,lane,envelope,fingerprint,policy,published,available)
                         VALUES (?,?,?,?,?,?,?,?,?)''',
                      (channel, envelope.producer, envelope.dedup_key, envelope.lane, encoded, digest,
                       active['version'], now, ready_at)).lastrowid
     fanout = {}
-    for group in routing.matching(db, channel, envelope.tags):
+    for group in matched:
         fanout[group['name']] = delivery.add(db, key, group['id'], envelope.lane, active['version'], ready_at)
     journal.append(db, channel, now, 'published', {'fanout': fanout, 'policy': active['version']}, key)
     return dict(message_id=key, policy=active['version'], repeated=False, fanout=fanout)

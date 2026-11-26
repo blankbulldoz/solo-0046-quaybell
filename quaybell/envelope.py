@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from . import codec, inputs
+from . import codec, confirmation, inputs
 from .errors import invalid
 
 
@@ -22,7 +22,8 @@ class Envelope:
 
     @classmethod
     def from_input(cls, raw):
-        inputs.require(raw, ('producer','key','lane','payload'), ('tags','delay_seconds'))
+        inputs.require(raw, ('producer','key','lane','payload'),
+                       ('tags','delay_seconds', *confirmation.CONTROL_FIELDS))
         result = cls(inputs.name(raw['producer'], '生产者'), inputs.token(raw['key'], '生产键'),
                      inputs.token(raw['lane'], '顺序键'), labels(raw.get('tags', {})),
                      raw['payload'], inputs.integer(raw.get('delay_seconds', 0), 0, 86400, '延迟秒数'))
@@ -33,3 +34,6 @@ class Envelope:
     def encoded(self):
         return codec.pack(dict(lane=self.lane, tags=self.tags, payload=self.payload,
                                delay_seconds=self.delay_seconds))
+
+    def fingerprint(self):
+        return codec.fingerprint(self.encoded())

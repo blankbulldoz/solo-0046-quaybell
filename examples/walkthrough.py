@@ -50,6 +50,107 @@ def preview(client):
     return candidate
 
 
+def publish_confirm(client):
+    client.channel()
+    matched_tags = {'feed': 'samples'}
+    client.subscribe('alpha', matched_tags)
+    client.subscribe('beta', matched_tags)
+
+    seen_request = envelope('confirmed-set', tags=matched_tags)
+    seen = client.request(CHANNEL + '/preview', seen_request)
+    assert seen['groups'] == ['alpha', 'beta']
+
+    # A subscription added after preview but which does not match the envelope
+    # is irrelevant: the confirmed target set is still the current target set.
+    client.subscribe('muted', {'feed': 'alerts'})
+    confirmed_request = seen_request | {'expected_groups': seen['groups']}
+    accepted = client.request(CHANNEL + '/messages', confirmed_request, 201)
+    assert accepted['repeated'] is False
+    assert list(accepted['fanout']) == ['alpha', 'beta']
+
+    # Losing the 201 receipt must not create a second publication.  Even a new
+    # matching subscription and the now-stale confirmed set yield the original
+    # receipt and original scope.
+    client.subscribe('late-match', {})
+    resent = client.request(CHANNEL + '/messages', confirmed_request, 200)
+    assert resent == accepted | {'repeated': True}
+    token_retry = client.request(CHANNEL + '/messages',
+                                 seen_request | {'confirmation_token': seen['confirmation_token']}, 200)
+    assert token_retry == accepted | {'repeated': True}
+    receipt_echo = client.request(CHANNEL + '/messages', seen_request | accepted, 200)
+    assert receipt_echo == accepted | {'repeated': True}
+    stored = client.request(f"/messages/{accepted['message_id']}")
+    assert stored['message']['id'] == accepted['message_id']
+
+    # A disjoint confirmed/current set is rejected atomically with a structured,
+    # reviewable diff.  Use a separate channel so the example starts from four
+    # deliberately disjoint north/south subscriptions.
+    drift_channel = '/channels/drift-gate'
+    client.request('/channels', {'name': 'drift-gate', 'policy': POLICY}, 201)
+    for name, region in (('north-one', 'north'), ('north-two', 'north'),
+                         ('south-one', 'south'), ('south-two', 'south')):
+        client.request(drift_channel + '/groups',
+                       {'name': name, 'tags': {'region': region}}, 201)
+    drift_request = envelope('drift-set', tags={'region': 'north'})
+    drift_seen = client.request(drift_channel + '/preview', drift_request)
+    assert drift_seen['groups'] == ['north-one', 'north-two']
+    other_view = client.request(
+        drift_channel + '/preview', envelope('drift-other-view', tags={'region': 'south'}))
+    assert other_view['groups'] == ['south-one', 'south-two']
+    mismatch = client.request(drift_channel + '/messages',
+                              drift_request | {'expected_groups': other_view['groups']}, 409)
+    assert mismatch['error'] == 'conflict'
+    assert mismatch['expected_groups'] == ['south-one', 'south-two']
+    assert mismatch['actual_groups'] == ['north-one', 'north-two']
+    assert mismatch['diff'] == {
+        'added': ['north-one', 'north-two'],
+        'removed': ['south-one', 'south-two'],
+    }
+    assert client.request(drift_channel)['messages'] == []
+
+    # A real post-preview change can turn an empty observed set into two matches.
+    fresh_request = envelope('fresh-set', tags={'wave': 'fresh'})
+    assert client.request(drift_channel + '/preview', fresh_request)['groups'] == []
+    client.request(drift_channel + '/groups',
+                   {'name': 'fresh-one', 'tags': {'wave': 'fresh'}}, 201)
+    client.request(drift_channel + '/groups',
+                   {'name': 'fresh-two', 'tags': {'wave': 'fresh'}}, 201)
+    fresh_conflict = client.request(
+        drift_channel + '/messages', fresh_request | {'expected_groups': []}, 409)
+    assert fresh_conflict['diff'] == {'added': ['fresh-one', 'fresh-two'], 'removed': []}
+
+    reviewed = client.request(drift_channel + '/preview', drift_request)
+    republished = client.request(
+        drift_channel + '/messages',
+        drift_request | {'expected_groups': reviewed['groups']}, 201)
+    assert list(republished['fanout']) == ['north-one', 'north-two']
+
+    return {
+        'new_nonmatching_subscription': {
+            'published': True,
+            'fanout': accepted['fanout'],
+        },
+        'drastically_different_matching_set': mismatch['diff'],
+        'lost_receipt_resend': {
+            'message_id': resent['message_id'],
+            'repeated': resent['repeated'],
+            'fanout': resent['fanout'],
+            'retrievable': stored['message']['id'] == accepted['message_id'],
+        },
+        # Compact compatibility aliases used by older local inspection.
+        'unrelated_addition': accepted['fanout'],
+        'lost_receipt_replay': resent['message_id'],
+        'disjoint_diff': mismatch['diff'],
+        'changed_empty_diff': fresh_conflict['diff'],
+        'reviewed_publication': republished['fanout'],
+    }
+
+
+confirm = publish_confirm
+confirmation = publish_confirm
+publish_confirmation = publish_confirm
+
+
 def publish(client):
     client.channel()
     client.subscribe()
@@ -207,7 +308,12 @@ def export(client):
     return {'format': record['format'], 'sha256': digest}
 
 
-FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
+FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, confirm=publish_confirm,
+             confirmation=publish_confirm, publish_confirm=publish_confirm,
+             publish_confirmation=publish_confirm,
+             **{'publish-confirm': publish_confirm,
+                'publish-confirmation': publish_confirm},
+             publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
              redrive=redrive, board=board, retention=retention, export=export)
 
