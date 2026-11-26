@@ -31,13 +31,24 @@ python3 -m quaybell --demo
 | `/deliveries/{id}/ack` | POST | `token` |
 | `/deliveries/{id}/nack` | POST | `token` 和 `reason` |
 | `/sweep` | POST | `{}` 或 `limit`，按原截止时间回收全局租约 |
-| `/channels/{channel}/dead` | GET | 最近 50 个失败投递及最后一次尝试 |
-| `/deliveries/{id}/redrive` | POST | `{}`，使用当前策略追加一个后继投递 |
-| `/messages/{id}` | GET | 信封、分发、尝试、消息级处理记录 |
+| `/channels/{channel}/dead` | GET | 最近 50 个仍待值守的失败投递及最后一次尝试（已结案的退出此列表） |
+| `/deliveries/{id}/redrive` | POST | `{}`，使用当前策略追加一个后继投递；已结案的原投递返回 409 |
+| `/deliveries/{id}/close` | POST | 死信结案，`kind` 为 `dismissed`（判定无需重投）或 `handed_off`（已交后继），附 `reason`、可选 `worker`，返回带摘要的结案凭证 |
+| `/channels/{channel}/closures` | GET | 最近 50 条结案记录及其凭证与后继状态 |
+| `/messages/{id}` | GET | 信封、分发、尝试、结案凭证、消息级处理记录 |
 | `/messages/{id}/evidence` | GET | `quaybell-trace/1` JSON 下载，摘要针对除 `sha256` 之外的规范化内容 |
-| `/channels/{channel}/retention` | GET / POST | 候选复核，或以 `{}` / `limit` 清理实际合格项 |
+| `/channels/{channel}/retention` | GET / POST | 候选复核，或以 `{}` / `limit` 清理实际合格项，返回被删消息及随删的结案原投递号 |
 
 默认策略是 `lease_seconds=24`、`retry_seconds=3`、`max_attempts=3`、`retention_seconds=3600`。重发原生产键时复用初始匹配结果，内容变化则返回 409。如果应用侧副作用必须去重，应按消息和消费组身份设计处理键。重投需要按其业务语义明确将后继身份识别为有意重新处理。
+
+### 死信结案
+
+值守人员通过 `/deliveries/{id}/close` 对死信结案，两类结果互斥：
+
+- `dismissed`（判定无需重投）：只允许在尚未追加后继时使用，结案后原投递退出待值守死信列表，不能再重投。
+- `handed_off`（已交后继）：要求该死信已有重投后继，结案后由后继沿自身状态继续，原投递仅保留追溯。
+
+结案是写事务内的原子判定：若一位值守员结案时另一位刚重投，先提交者生效，后者收到 409 并可凭频道结案记录核对；已结案的投递不能改换类型或依据，重复提交完全相同的请求则返回同一张凭证（`repeated=true`，状态码 200）。凭证为 `quaybell-closure/1`，含判定依据、值守员、后继号和原记录/后继各自还能做什么的 `standing`，并带规范化内容的 `sha256`。结案项从 `/dead` 待值守列表消失，但仍出现在 `/channels/{channel}/closures`、消息轨迹和证据导出中；消息过保留期被清理时，频道级清理事件记录随删的结案原投递号。后继仍处于等待或租约中时，整条消息不满足清理条件，即使保留期已到也会整组保留。
 
 以下载荷可发布到示例频道。默认延迟为零。
 
@@ -50,6 +61,8 @@ python3 -m quaybell --demo
 ```sh
 python3 -m compileall -q quaybell examples
 python3 -m examples.walkthrough claim
+python3 -m examples.walkthrough close_race
+python3 -m examples.walkthrough close_retention
 python3 -m examples.walkthrough retention
 python3 -m examples.walkthrough export
 ```

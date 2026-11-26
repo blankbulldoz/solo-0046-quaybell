@@ -54,6 +54,15 @@ class Session:
             data['reason'] = '下游拒绝校验帧'
         return self.request(f"/deliveries/{item['delivery_id']}/{mode}", data, expected)
 
+    def fail_once(self):
+        item = self.claim()[0]
+        self.settle(item, 'nack')
+        return item['delivery_id']
+
+    def close(self, delivery_id, kind, reason='值守判定依据', expected=201, **extra):
+        return self.request(f'/deliveries/{delivery_id}/close',
+                            dict(kind=kind, reason=reason, worker='bench-duty') | extra, expected)
+
 
 def envelope(key='signal-1', lane='coil-north', **extra):
     return dict(producer='signal-source', key=key, lane=lane, payload={'value': 18},

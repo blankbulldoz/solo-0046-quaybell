@@ -18,9 +18,14 @@ def plan(db, channel, now, limit=100):
 
 def prune(db, channel, raw, now):
     inputs.require(raw, (), ('limit',))
-    keys = [item['id'] for item in eligible(db, channel, now,
-                                          inputs.integer(raw.get('limit', 100), 1, 100, '清理上限'))]
+    chosen = eligible(db, channel, now,
+                      inputs.integer(raw.get('limit', 100), 1, 100, '清理上限'))
+    keys = [item['id'] for item in chosen]
+    closed = [row['id'] for row in db.execute(
+        'SELECT id FROM closures WHERE channel=? AND message_id IN (%s) ORDER BY id'
+        % ','.join('?' for _ in keys), (channel, *keys))] if keys else []
     db.executemany('DELETE FROM messages WHERE id=?', [(key,) for key in keys])
     if keys:
-        journal.append(db, channel, now, 'pruned', {'message_ids': keys})
-    return {'removed': keys, 'observed_at': now}
+        journal.append(db, channel, now, 'pruned',
+                       {'message_ids': keys, 'closed_delivery_ids': closed})
+    return {'removed': keys, 'closed_delivery_ids': closed, 'observed_at': now}

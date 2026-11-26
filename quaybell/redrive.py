@@ -2,7 +2,7 @@ from . import deadletters, delivery, journal, policy
 
 
 def redrive(db, key, now):
-    prior = deadletters.get(db, key)
+    prior = deadletters.ensure_open(db, key)
     existing = db.execute('SELECT id,policy FROM deliveries WHERE parent_id=?', (key,)).fetchone()
     if existing:
         return {'source_id': key, 'delivery_id': existing['id'], 'policy': existing['policy'], 'repeated': True}

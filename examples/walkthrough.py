@@ -1,6 +1,7 @@
 """Run one bounded middleware workflow through the public HTTP listener."""
 import argparse
 import logging
+import threading
 
 from quaybell.codec import fingerprint, pack
 
@@ -165,6 +166,137 @@ def redrive(client):
     return new
 
 
+def close_dismissed(client):
+    client.channel(POLICY | {'max_attempts': 1})
+    client.subscribe()
+    client.publish()
+    dead_id = client.fail_once()
+    client.request(f'/deliveries/{dead_id}/close',
+                   {'kind': 'handed_off', 'reason': '尚无后继，不能按已交后继结案'}, 409)
+    receipt = client.close(dead_id, 'dismissed')
+    assert receipt['repeated'] is False and receipt['format'] == 'quaybell-closure/1'
+    assert receipt['basis']['kind'] == 'dismissed' and receipt['basis']['delivery_id'] == dead_id
+    assert receipt['standing']['original'] == {
+        'delivery_id': dead_id, 'can_redrive': False, 'can_lease': False, 'can_settle': False,
+        'traceable': True,
+        'note': '原投递保持死信终态并附结案记录，只能追溯；重投和处置均已关闭'}
+    assert receipt['standing']['successor'] is None
+    assert fingerprint(pack(dict(format=receipt['format'], basis=receipt['basis'],
+                                 standing=receipt['standing']))) == receipt['sha256']
+    again = client.close(dead_id, 'dismissed', expected=200)
+    assert again == receipt | {'repeated': True}
+    client.close(dead_id, 'dismissed', reason='改换依据的重试必须冲突', expected=409)
+    client.request(f'/deliveries/{dead_id}/redrive', {}, 409)
+    watch = client.request(CHANNEL + '/dead')['items']
+    assert all(item['id'] != dead_id for item in watch)
+    history = client.request(CHANNEL + '/closures')['items']
+    assert history[0]['receipt']['sha256'] == receipt['sha256'] and history[0]['kind'] == 'dismissed'
+    facts = client.request(f"/messages/{history[0]['message_id']}")
+    assert [item['kind'] for item in facts['closures']] == ['dismissed']
+    assert [event['kind'] for event in facts['events']][-1] == 'closed'
+    exported = client.request(f"/messages/{history[0]['message_id']}/evidence")
+    assert exported['trace']['closures'][0]['receipt']['sha256'] == receipt['sha256']
+    return {'closed': dead_id, 'sha256': receipt['sha256'], 'retry_repeated': again['repeated']}
+
+
+def close_handoff(client):
+    client.channel(POLICY | {'max_attempts': 1})
+    client.subscribe()
+    client.publish()
+    dead_id = client.fail_once()
+    child = client.request(f'/deliveries/{dead_id}/redrive', {}, 201)
+    client.close(dead_id, 'dismissed', expected=409)
+    receipt = client.close(dead_id, 'handed_off')
+    assert receipt['basis']['successor_id'] == child['delivery_id']
+    standing = receipt['standing']
+    assert standing['original']['can_redrive'] is False and standing['original']['traceable'] is True
+    assert standing['successor'] == {
+        'delivery_id': child['delivery_id'], 'state': 'waiting', 'can_lease': True,
+        'can_settle': False, 'traceable': True,
+        'note': '后继是独立投递，沿用本组顺序键并绑定重投时策略，按自身状态继续生命周期'}
+    picked = client.claim()[0]
+    client.settle(picked)
+    assert picked['delivery_id'] == child['delivery_id']
+    history = client.request(CHANNEL + '/closures')['items']
+    assert history[0]['successor_state'] == 'acked'
+    return {'source': dead_id, 'successor': child['delivery_id'], 'kind': receipt['basis']['kind']}
+
+
+def close_race(client):
+    client.channel(POLICY | {'max_attempts': 1})
+    client.subscribe()
+    client.publish()
+    dead_id = client.fail_once()
+    barrier = threading.Barrier(2)
+    outcomes = {}
+
+    def closer():
+        barrier.wait()
+        try:
+            outcomes['close'] = client.close(dead_id, 'dismissed', reason='值班员甲判定无需重投')
+        except RuntimeError as exc:
+            outcomes['close_error'] = exc.args[0]
+
+    def redriver():
+        barrier.wait()
+        try:
+            outcomes['redrive'] = client.request(f'/deliveries/{dead_id}/redrive', {}, 201)
+        except RuntimeError as exc:
+            outcomes['redrive_error'] = exc.args[0]
+
+    threads = [threading.Thread(target=closer), threading.Thread(target=redriver)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    watch = {item['id']: item for item in client.request(CHANNEL + '/dead')['items']}
+    if 'close' in outcomes:
+        assert 'redrive_error' in outcomes and outcomes['redrive_error'][1] == 409
+        assert outcomes['close']['repeated'] is False
+        assert dead_id not in watch
+        assert client.close(dead_id, 'dismissed', reason='值班员甲判定无需重投',
+                            expected=200)['repeated'] is True
+    else:
+        assert 'redrive' in outcomes and outcomes['close_error'][1] == 409
+        child = outcomes['redrive']['delivery_id']
+        assert dead_id in watch and watch[dead_id]['redriven_as'] == child
+        receipt = client.close(dead_id, 'handed_off', reason='值班员乙确认后继已接手')
+        assert receipt['basis']['successor_id'] == child
+        client.close(dead_id, 'dismissed', expected=409)
+        assert dead_id not in {item['id'] for item in client.request(CHANNEL + '/dead')['items']}
+    assert len(client.request(CHANNEL + '/closures')['items']) == 1
+    return {'winner': 'close' if 'close' in outcomes else 'redrive', 'outcomes': sorted(outcomes)}
+
+
+def close_retention(client):
+    client.channel(POLICY | {'max_attempts': 1})
+    client.subscribe()
+    held = client.publish('held', 'coil-south')
+    first = client.publish()
+    held_dead = client.fail_once()
+    held_child = client.request(f'/deliveries/{held_dead}/redrive', {}, 201)
+    client.close(held_dead, 'handed_off', reason='后继仍在手里，保留期到点也不能清理')
+    client.publish('first-again')
+    first_dead = client.fail_once()
+    client.close(first_dead, 'dismissed', reason='无需重投，可随保留期退出')
+    client.tick(11)
+    plan = client.request(CHANNEL + '/retention')
+    assert [row['id'] for row in plan['eligible']] == [first['message_id']]
+    done = client.request(CHANNEL + '/retention', {})
+    assert done['removed'] == [first['message_id']]
+    assert done['closed_delivery_ids'] == [first_dead]
+    client.request(f"/messages/{first['message_id']}", expected=404)
+    held_facts = client.request(f"/messages/{held['message_id']}")
+    assert held_facts['closures'][0]['receipt']['basis']['kind'] == 'handed_off'
+    successor = client.claim()[0]
+    assert successor['delivery_id'] == held_child['delivery_id']
+    client.settle(successor)
+    client.request(CHANNEL + '/retention', {})
+    client.request(f"/messages/{held['message_id']}", expected=404)
+    assert client.request(CHANNEL + '/closures')['items'] == []
+    return {'first_prune': done['closed_delivery_ids'], 'held_message': held['message_id']}
+
+
 def board(client):
     client.channel()
     client.subscribe()
@@ -209,7 +341,9 @@ def export(client):
 
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             redrive=redrive, close_dismissed=close_dismissed, close_handoff=close_handoff,
+             close_race=close_race, close_retention=close_retention,
+             board=board, retention=retention, export=export)
 
 
 def main():

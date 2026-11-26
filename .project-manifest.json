@@ -87,6 +87,11 @@
       "responsibility": "追加同组后继投递"
     },
     {
+      "id": "closures",
+      "path": "quaybell/closures.py",
+      "responsibility": "死信两类结案、结案凭证与可重试一致性"
+    },
+    {
       "id": "overview",
       "path": "quaybell/overview.py",
       "responsibility": "组状态、队列和近期消息快照"
@@ -365,6 +370,82 @@
         "delivery",
         "policy",
         "journal"
+      ]
+    },
+    {
+      "id": "close_dismissed",
+      "name": "判定死信无需重投并退出值守",
+      "entry": "POST /v1/deliveries/{id}/close",
+      "success": "原投递退出待值守死信列表，凭证说明原记录仅可追溯",
+      "failure": "已追加后继时不能判为无需重投，改换依据的重试返回 409",
+      "verification": "python3 -m examples.walkthrough close_dismissed",
+      "steps": [
+        "通过 POST /v1/deliveries/{id}/close 提交 dismissed 结案",
+        "结案与重投在同一写事务内互斥，相同请求重试返回同一凭证",
+        "原投递保持死信终态并退出待值守列表，轨迹和证据仍可追溯"
+      ],
+      "module_ids": [
+        "closures",
+        "deadletters",
+        "journal",
+        "evidence"
+      ]
+    },
+    {
+      "id": "close_handoff",
+      "name": "确认死信已交给后继后结案",
+      "entry": "POST /v1/deliveries/{id}/close",
+      "success": "凭证记录后继号，后继按自身状态继续领取和处置",
+      "failure": "尚无后继时不能按已交后继结案，原投递不能再重投",
+      "verification": "python3 -m examples.walkthrough close_handoff",
+      "steps": [
+        "重投生成后继后通过 POST /v1/deliveries/{id}/close 提交 handed_off 结案",
+        "凭证的 standing 分别说明原记录与后继还能做什么",
+        "后继独立领取并确认，频道结案记录同步后继状态"
+      ],
+      "module_ids": [
+        "closures",
+        "redrive",
+        "deadletters",
+        "inspection"
+      ]
+    },
+    {
+      "id": "close_race",
+      "name": "结案与重投并发时只承认一个结果",
+      "entry": "POST /v1/deliveries/{id}/close 与 /redrive 并发",
+      "success": "先提交者生效，另一方收到 409 且值守列表与凭证一致",
+      "failure": "失败方可凭频道结案记录核对后按正确类型补结案",
+      "verification": "python3 -m examples.walkthrough close_race",
+      "steps": [
+        "两位值守员同时对同一死信发起结案与重投",
+        "写事务串行化保证只有一个操作成功，冲突方返回 409",
+        "结案成功则重投关闭；重投成功则只能按 handed_off 补结案"
+      ],
+      "module_ids": [
+        "closures",
+        "redrive",
+        "persistence",
+        "deadletters"
+      ]
+    },
+    {
+      "id": "close_retention",
+      "name": "保留期到点时按结案与后继状态衔接清理",
+      "entry": "GET / POST /v1/channels/{channel}/retention",
+      "success": "无活动分发的结案消息被清理并记录随删结案原投递号",
+      "failure": "后继仍在等待或租约中的消息整组保留",
+      "verification": "python3 -m examples.walkthrough close_retention",
+      "steps": [
+        "一条消息判无需重投，另一条重投后继仍被租约持有",
+        "保留期到点后清理候选只含全部终态的消息",
+        "后继处置完成后第二次清理删除剩余消息，频道记录保留被删结案号"
+      ],
+      "module_ids": [
+        "retention",
+        "closures",
+        "journal",
+        "inspection"
       ]
     },
     {

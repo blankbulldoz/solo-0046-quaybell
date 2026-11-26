@@ -77,5 +77,18 @@ CREATE INDEX IF NOT EXISTS delivery_origin ON deliveries(message_id,id);
 CREATE INDEX IF NOT EXISTS attempt_deadline ON attempts(expires,id) WHERE outcome='open';
 CREATE UNIQUE INDEX IF NOT EXISTS one_open_attempt ON attempts(delivery_id) WHERE outcome='open';
 CREATE INDEX IF NOT EXISTS message_channel ON messages(channel,published,id);
+CREATE TABLE IF NOT EXISTS closures (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  channel TEXT NOT NULL REFERENCES channels(name),
+  delivery_id INTEGER NOT NULL UNIQUE REFERENCES deliveries(id) ON DELETE CASCADE,
+  message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  successor_id INTEGER REFERENCES deliveries(id) ON DELETE SET NULL,
+  kind TEXT NOT NULL CHECK(kind IN ('dismissed','handed_off')),
+  worker TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  at REAL NOT NULL,
+  receipt TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS closure_channel ON closures(channel,id);
 CREATE INDEX IF NOT EXISTS journal_message ON journal(message_id,id);
 '''

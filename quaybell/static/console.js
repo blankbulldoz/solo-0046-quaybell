@@ -84,15 +84,38 @@ function render() {
   rows('message-rows', messages.map(item => [traceLink(item.id), item.producer, item.dedup_key,
     `v${item.policy}`, clock(item.published)]), 5, '当前频道没有消息');
   const dead = board?.dead || [];
-  $('dead-total').textContent = dead.length ? `最近 ${dead.length} 条` : '';
-  rows('dead-rows', dead.map(item => [traceLink(item.message_id, `#${item.id}`), item.group_name,
-    item.last_attempt.reason, item.redriven_as ? `已追加 #${item.redriven_as}` :
-      button('重投', async () => {
+  $('dead-total').textContent = dead.length ? `待值守 ${dead.length} 条` : '';
+  rows('dead-rows', dead.map(item => {
+    const redriveCell = item.redriven_as
+      ? node('span', `已追加 #${item.redriven_as}`, 'muted')
+      : button('重投', async () => {
         const result = await api(`/deliveries/${item.id}/redrive`, {});
         notice(`重投记录 #${result.delivery_id}`);
         resetRetention();
         await refresh();
-      })]), 4, '当前频道没有死信');
+      });
+    const closeLabel = item.redriven_as ? '结案：已交后继' : '结案：无需重投';
+    const close = button(closeLabel, async () => {
+      const reason = window.prompt(`为死信 #${item.id} 填写结案依据（将随凭证留存）`);
+      if (reason === null) return;
+      const kind = item.redriven_as ? 'handed_off' : 'dismissed';
+      const result = await api(`/deliveries/${item.id}/close`,
+        {kind, reason: reason.trim(), worker: 'console-duty'});
+      notice(`${result.repeated ? '复用既有' : '已生成'}结案凭证 ${result.sha256.slice(0, 12)}…`);
+      resetRetention();
+      await refresh();
+    }, {className: 'danger'});
+    return [traceLink(item.message_id, `#${item.id}`), item.group_name,
+      item.last_attempt.reason, redriveCell, close];
+  }), 5, '当前频道没有待值守死信');
+  const closureList = board?.closures || [];
+  $('closure-total').textContent = closureList.length ? `最近 ${closureList.length} 条` : '';
+  rows('closure-rows', closureList.map(item => [
+    traceLink(item.message_id, `#${item.delivery_id}`),
+    status(item.kind),
+    item.successor_id ? `#${item.successor_id}（${TEXT[item.successor_state] || item.successor_state}）` : node('span', '无后继', 'muted'),
+    item.reason, clock(item.at), item.receipt.sha256.slice(0, 12),
+  ]), 6, '当前频道没有结案记录');
   renderLeases();
 }
 
@@ -139,6 +162,21 @@ async function trace(id) {
     return section;
   }));
   if (!facts.deliveries.length) $('trace-deliveries').append(node('p', '发布时没有匹配消费组', 'muted'));
+  $('trace-closures').replaceChildren(...(facts.closures || []).map(item => {
+    const section = node('section');
+    const receipt = item.receipt;
+    section.append(
+      node('h4', `#${item.delivery_id} · ${TEXT[item.kind]} · ${clock(item.at)}`),
+      node('p', `值守员 ${item.worker} · 依据：${item.reason}`, 'mono'),
+      node('p', `凭证 ${receipt.sha256}`, 'mono'),
+      node('p', receipt.standing.original.note, 'muted'),
+      node('p', receipt.standing.successor ? receipt.standing.successor.note
+        : '未追加后继：该顺序键上不再产生本组分发，原记录仅可追溯。', 'muted'));
+    return section;
+  }));
+  if (!(facts.closures || []).length) {
+    $('trace-closures').append(node('p', '该消息没有结案记录', 'muted'));
+  }
   $('trace-events').replaceChildren(...facts.events.map(item => node('li',
     `${clock(item.at)} · ${TEXT[item.kind === 'leased' ? 'leased_event' : item.kind]} · ${JSON.stringify(item.details)}`)));
   $('trace-export').href = `/v1/messages/${id}/evidence`;

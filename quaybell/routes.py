@@ -8,6 +8,7 @@ DELIVERY = r'/v1/deliveries/([1-9][0-9]{0,17})'
 PATTERNS = {
     'GET': (
         ('/v1/channels', 'channels'), (CHANNEL, 'board'), (CHANNEL + '/dead', 'dead'),
+        (CHANNEL + '/closures', 'closures'),
         (MESSAGE, 'trace'), (MESSAGE + '/evidence', 'export'), (CHANNEL + '/retention', 'retention'),
     ),
     'POST': (
@@ -15,7 +16,8 @@ PATTERNS = {
         (CHANNEL + '/groups', 'subscribe'), (GROUP + '/pause', 'pause'),
         (CHANNEL + '/preview', 'preview'), (CHANNEL + '/messages', 'publish'),
         (GROUP + '/claim', 'claim'), (DELIVERY + '/ack', 'ack'), (DELIVERY + '/nack', 'nack'),
-        ('/v1/sweep', 'sweep'), (DELIVERY + '/redrive', 'redrive'), (CHANNEL + '/retention', 'prune'),
+        ('/v1/sweep', 'sweep'), (DELIVERY + '/redrive', 'redrive'),
+        (DELIVERY + '/close', 'close'), (CHANNEL + '/retention', 'prune'),
     ),
 }
 ROUTES = {method: [(re.compile(pattern), action) for pattern, action in patterns]

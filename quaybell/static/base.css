@@ -103,6 +103,8 @@ td.wrap { white-space: normal; min-width: 115px; overflow-wrap: anywhere; }
 .status[data-state="blocked"], .status[data-state="delayed"] { color: #714b16; background: #fff0db; }
 .status[data-state="expired"], .status[data-state="dead"], .status[data-state="nacked"] { color: #852620; background: #fbe9e6; }
 .status[data-state="leased"], .status[data-state="open"] { color: #225382; background: #e9f0f8; }
+.status[data-state="dismissed"] { color: #5b4a12; background: #f2ecd2; }
+.status[data-state="handed_off"] { color: #3d2d63; background: #ece6f6; }
 .tools { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .tools > h2 { padding: 12px 13px; margin: 0; }
 .tools details { padding: 10px 12px; border-top: 1px solid var(--line); }
