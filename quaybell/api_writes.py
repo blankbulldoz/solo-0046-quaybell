@@ -9,6 +9,8 @@ def write(db, action, args, raw, now):
         return Reply(catalog.update_policy(db, *args, raw, now), 201)
     if action == 'subscribe':
         return Reply(subscriptions.create(db, *args, raw, now), 201)
+    if action == 'retag':
+        return Reply(subscriptions.replace_tags(db, *args, raw, now))
     if action == 'pause':
         return Reply(subscriptions.pause(db, *args, raw, now))
     if action == 'publish':

@@ -24,6 +24,7 @@ python3 -m quaybell --demo
 | `/channels/{channel}` | GET | 当前策略、分组计数、队列样本、近期消息与死信 |
 | `/channels/{channel}/policy` | POST | 全部四个策略值和预期版号 `expected` |
 | `/channels/{channel}/groups` | POST | `name`、可选匹配 `tags` |
+| `/channels/{channel}/groups/{group}/tags` | POST | 用 `tags` 整体替换匹配标签，返回切换界线与界线前在途投递 |
 | `/channels/{channel}/groups/{group}/pause` | POST | `paused` 为布尔值 |
 | `/channels/{channel}/preview` | POST | 用发布信封查询当前标签匹配结果 |
 | `/channels/{channel}/messages` | POST | `producer`、`key`、`lane`、`payload`、可选 `tags`、`delay_seconds` |

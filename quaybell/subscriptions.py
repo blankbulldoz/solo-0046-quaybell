@@ -33,6 +33,31 @@ def create(db, channel, raw, now):
     return get(db, channel, group)
 
 
+def replace_tags(db, channel, group, raw, now):
+    record = get(db, channel, group)
+    inputs.require(raw, ('tags',))
+    tags = labels(raw['tags'])
+    if tags == record['tags']:
+        raise conflict('匹配标签未变化')
+    last = db.execute('SELECT COALESCE(MAX(id), 0) FROM messages WHERE channel=?',
+                      (channel,)).fetchone()[0]
+    db.execute('UPDATE subscriptions SET tags=? WHERE id=?', (pack(tags), record['id']))
+    carried = [dict(row) for row in db.execute(
+        '''SELECT d.id AS delivery_id, d.message_id, d.lane, d.state FROM deliveries d
+           WHERE d.subscription_id=? AND d.state IN ('waiting','leased')
+           ORDER BY d.id LIMIT 50''', (record['id'],))]
+    total = db.execute('''SELECT COUNT(*) FROM deliveries
+                          WHERE subscription_id=? AND state IN ('waiting','leased')''',
+                       (record['id'],)).fetchone()[0]
+    boundary = {'switched_at': now, 'last_message_id': last, 'carried_total': total,
+                'carried': carried}
+    journal.append(db, channel, now, 'retagged',
+                   {'group': group, 'previous_tags': record['tags'], 'tags': tags,
+                    'last_message_id': last, 'carried_total': total})
+    return {'channel': channel, 'group': group, 'previous_tags': record['tags'],
+            'tags': tags, 'boundary': boundary}
+
+
 def pause(db, channel, group, raw, now):
     inputs.require(raw, ('paused',))
     desired = inputs.boolean(raw['paused'], '暂停状态')

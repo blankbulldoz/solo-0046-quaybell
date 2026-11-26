@@ -12,7 +12,8 @@ PATTERNS = {
     ),
     'POST': (
         ('/v1/channels', 'create_channel'), (CHANNEL + '/policy', 'revision'),
-        (CHANNEL + '/groups', 'subscribe'), (GROUP + '/pause', 'pause'),
+        (CHANNEL + '/groups', 'subscribe'), (GROUP + '/tags', 'retag'),
+        (GROUP + '/pause', 'pause'),
         (CHANNEL + '/preview', 'preview'), (CHANNEL + '/messages', 'publish'),
         (GROUP + '/claim', 'claim'), (DELIVERY + '/ack', 'ack'), (DELIVERY + '/nack', 'nack'),
         ('/v1/sweep', 'sweep'), (DELIVERY + '/redrive', 'redrive'), (CHANNEL + '/retention', 'prune'),

@@ -165,6 +165,40 @@ def redrive(client):
     return new
 
 
+def retag(client):
+    client.channel(POLICY | {'max_attempts': 1})
+    client.subscribe(tags={'feed': 'samples'})
+    before = client.publish('pre-switch')
+    pending = client.publish('pre-pending')
+    client.settle(client.claim()[0], 'nack')
+    narrow = {'tags': {'feed': 'samples', 'kind': 'pulse'}}
+    client.request(GROUP + '/tags', {'tags': {'feed': []}}, 400)
+    record = client.request(GROUP + '/tags', narrow)
+    client.request(GROUP + '/tags', narrow, 409)
+    boundary = record['boundary']
+    assert record['previous_tags'] == {'feed': 'samples'}
+    assert boundary['last_message_id'] == pending['message_id']
+    assert [row['message_id'] for row in boundary['carried']] == [pending['message_id']]
+    root = before['fanout']['oscillator']
+    child = client.request(f'/deliveries/{root}/redrive', {}, 201)
+    taken = client.claim()[0]
+    assert taken['message_id'] == pending['message_id']
+    client.settle(taken)
+    crossed = client.claim()[0]
+    assert (crossed['delivery_id'], crossed['message_id']) == (child['delivery_id'], before['message_id'])
+    client.settle(crossed)
+    stale = client.publish('post-switch')
+    fresh = client.publish('post-switch-2', tags=narrow['tags'])
+    assert stale['fanout'] == {} and boundary['last_message_id'] < stale['message_id']
+    assert list(fresh['fanout']) == ['oscillator']
+    client.settle(client.claim()[0])
+    trace = client.request(f"/messages/{before['message_id']}")
+    assert [event['kind'] for event in trace['events']] == [
+        'published', 'leased', 'nacked', 'redriven', 'leased', 'acked']
+    return {'boundary': boundary, 'redriven_as': child['delivery_id'],
+            'stale_fanout': stale['fanout'], 'fresh_fanout': fresh['fanout']}
+
+
 def board(client):
     client.channel()
     client.subscribe()
@@ -209,7 +243,7 @@ def export(client):
 
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             redrive=redrive, retag=retag, board=board, retention=retention, export=export)
 
 
 def main():
