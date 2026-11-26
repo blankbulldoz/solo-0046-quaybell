@@ -1,11 +1,12 @@
-from . import attempts, delivery, inputs, outcomes
+from . import attempts, failures, delivery, inputs, outcomes
 
 
 def reap(db, now, limit, group_id=None):
     result = []
     for attempt in attempts.expired(db, now, limit, group_id):
         item = delivery.get(db, attempt['delivery_id'])
-        result.append(outcomes.apply(db, item, attempt, 'expired', '租约超时', now))
+        result.append(outcomes.apply(db, item, attempt, 'expired', '租约超时', now,
+                                     classification=failures.TIMEOUT))
     return result
 
 

@@ -9,12 +9,13 @@ Quaybell 是面向内部服务集成的持久消息中间件。应用通过 HTTP
 - 每个消费组中，一个顺序键上 ID 最小的未处置投递挡住后继。不同顺序键之间独立。领取最多 30 条，选择时按投递 ID 排序。没有常驻回收线程。取件会先扫描本组最多 100 个到期尝试，控制台可另外执行全局有界回收。
 - 暂停只影响之后的取件。租约凭据绑定一次尝试，在到期时刻失效。确认和明确拒绝可重试，相同请求读取已记录结果。客户仍须按业务需要自行去重其外部副作用。
 - 明确拒绝的退避以处置时间起算，超时退避以租约截止时间起算。退避从原策略初始值指数增长，最长一小时。尝试数用尽时，投递进入死信。重投追加一条本组投递，绑定当前策略并加入所在顺序键的队尾。每条死信只追加一个直接后继，后继可独立失败。
+- NACK 与回收共用 `outcomes` 的分类处置：`rate_limited`（临时限流）与未分类的普通失败、`timeout`（租约回收）一样走退避；`permanent`（明确永久拒绝，例如无法解析）立即死信，终结原因记为 `permanent_rejection`，预算用尽记为 `max_attempts`。旧消费者只传 `reason` 文字时按未分类失败处理，时序与回执字段保持兼容。分类持久化在尝试记录上，`classification/retryable` 进入轨迹与死信视图，处置结果另给 `terminal_reason`、`next_attempt_at`。
 - 清理时按消息发布时绑定的保留秒数比较年龄，并检查整条消息的所有派生分发。清理在写事务内重新计算，删除原信封、原回执、尝试和消息级审计。之后原生产键可复用。频道级清理记录保留被删 ID。
 - 租约、公示时间和就绪时间都是 Unix 秒。同步 API 返回 JSON。证据导出绑定一个观察时间和读取快照，去除租约凭据并提供内容摘要。
 
 ## 职责
 
-`catalog`、`policy` 和 `subscriptions` 管辖拓扑与版本；`envelope`、`routing` 和 `publication` 从信封生成分发；`delivery`、`eligibility`、`attempts` 和 `claims` 一起决定谁能领取；`disposition`、`expiry` 和 `outcomes` 确保处置及重试一致；`inspection`、`overview`、`retention` 和 `evidence` 提供查询和保留处置。`persistence` 定义 SQLite 事务边界，接入层负责请求体和响应，控制台使用单页的公开 JSON 接口。
+`catalog`、`policy` 和 `subscriptions` 管辖拓扑与版本；`envelope`、`routing` 和 `publication` 从信封生成分发；`delivery`、`eligibility`、`attempts` 和 `claims` 一起决定谁能领取；`disposition`、`failures`、`expiry` 和 `outcomes` 确保处置分类及重试一致；`inspection`、`overview`、`retention` 和 `evidence` 提供查询和保留处置。`persistence` 定义 SQLite 事务边界，接入层负责请求体和响应，控制台使用单页的公开 JSON 接口。
 
 ## 验证边界
 

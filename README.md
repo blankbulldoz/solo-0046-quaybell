@@ -29,7 +29,8 @@ python3 -m quaybell --demo
 | `/channels/{channel}/messages` | POST | `producer`、`key`、`lane`、`payload`、可选 `tags`、`delay_seconds` |
 | `/channels/{channel}/groups/{group}/claim` | POST | `worker`、可选 `limit`，返回含 `lease.token` 的领取项 |
 | `/deliveries/{id}/ack` | POST | `token` |
-| `/deliveries/{id}/nack` | POST | `token` 和 `reason` |
+| `/deliveries/{id}/nack` | POST | `token`、`reason`，可选 `classification`（`rate_limited` 临时限流 / `permanent` 永久拒绝）、`retry_after_seconds` |
+| `/deliveries/{id}/reject` | POST | `token`、可选 `reason`，等价于带 `classification:"permanent"` 的 NACK |
 | `/sweep` | POST | `{}` 或 `limit`，按原截止时间回收全局租约 |
 | `/channels/{channel}/dead` | GET | 最近 50 个失败投递及最后一次尝试 |
 | `/deliveries/{id}/redrive` | POST | `{}`，使用当前策略追加一个后继投递 |
@@ -38,6 +39,15 @@ python3 -m quaybell --demo
 | `/channels/{channel}/retention` | GET / POST | 候选复核，或以 `{}` / `limit` 清理实际合格项 |
 
 默认策略是 `lease_seconds=24`、`retry_seconds=3`、`max_attempts=3`、`retention_seconds=3600`。重发原生产键时复用初始匹配结果，内容变化则返回 409。如果应用侧副作用必须去重，应按消息和消费组身份设计处理键。重投需要按其业务语义明确将后继身份识别为有意重新处理。
+
+外部设备临时限流与永久拒绝（例如无法解析的消息）走不同处置：NACK 时传可选的 `classification:"rate_limited"` 仍按绑定策略指数退避重试，传 `"permanent"` 则立即进死信（结果与轨迹中的 `terminal_reason` 为 `permanent_rejection`），不等待、不占用 `max_attempts` 预算。只传原来的 `reason` 文字时完全保持旧行为（普通失败退避到预算用尽）。为兼容不同消费方，也接受 `retryable:false`、`permanent:true`、`requeue:false`、`status:429/400/422`、`error.code` 以及原因开头的 `[permanent]`、`rate-limit:` 标签等等价写法。限流响应可用 `retry_after_seconds` 指定下一次等待秒数。租约到期回收记为 `timeout`，退避仍从原租约截止时间起算。处置回执与 `GET /messages/{id}` 的尝试历史带 `classification`、`retryable`，回执另带 `next_attempt_at` 或 `terminal_reason`，可据尝试时间线说明下一次何时可领、为何终结。
+
+以下命令用受控时钟演示完整场景（旧策略下限流 → 策略改版后旧投递租约到期并按 v1 退避 → 预算用尽终结；另一条消息首次尝试即被永久拒绝；旧 reason-only 消费者行为不变）：
+
+```sh
+python3 -m examples.walkthrough classify
+```
+
 
 以下载荷可发布到示例频道。默认延迟为零。
 
@@ -50,6 +60,7 @@ python3 -m quaybell --demo
 ```sh
 python3 -m compileall -q quaybell examples
 python3 -m examples.walkthrough claim
+python3 -m examples.walkthrough classify
 python3 -m examples.walkthrough retention
 python3 -m examples.walkthrough export
 ```

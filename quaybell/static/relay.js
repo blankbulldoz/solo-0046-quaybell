@@ -4,6 +4,9 @@ export const TEXT = {
   leased: '租约中', expired: '租约超时', acked: '已确认', nacked: '已拒绝',
   waiting: '等待中', dead: '死信', open: '未应答', leased_event: '发放租约',
   published: '已发布', redriven: '重投',
+  rate_limited: '临时限流', permanent: '永久拒绝', transient: '临时故障',
+  failed: '普通失败', timeout: '租约超时',
+  permanent_rejection: '明确永久拒绝', max_attempts: '尝试次数用尽',
 };
 
 export async function api(path, data) {

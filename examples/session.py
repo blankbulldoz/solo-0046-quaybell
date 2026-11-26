@@ -48,10 +48,11 @@ class Session:
     def claim(self, limit=1, worker='bench-worker'):
         return self.request(GROUP + '/claim', {'worker': worker, 'limit': limit})['items']
 
-    def settle(self, item, mode='ack', expected=200):
+    def settle(self, item, mode='ack', expected=200, **extra):
         data = {'token': item['lease']['token']}
         if mode == 'nack':
-            data['reason'] = '下游拒绝校验帧'
+            data['reason'] = extra.pop('reason', '下游拒绝校验帧')
+        data.update(extra)
         return self.request(f"/deliveries/{item['delivery_id']}/{mode}", data, expected)
 
 

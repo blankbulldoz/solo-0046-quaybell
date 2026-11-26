@@ -1,4 +1,4 @@
-VERSION = 1
+VERSION = 2
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS channels (
   name TEXT PRIMARY KEY,
@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS deliveries (
   ready_at REAL NOT NULL,
   attempt_count INTEGER NOT NULL DEFAULT 0,
   terminal_at REAL,
+  terminal_reason TEXT,
   parent_id INTEGER UNIQUE REFERENCES deliveries(id)
 );
 CREATE TABLE IF NOT EXISTS attempts (
@@ -60,6 +61,7 @@ CREATE TABLE IF NOT EXISTS attempts (
   outcome TEXT NOT NULL CHECK('open' = outcome OR outcome IN ('acked','nacked','expired')),
   finished REAL,
   reason TEXT,
+  classification TEXT,
   receipt TEXT,
   UNIQUE(delivery_id, number)
 );

@@ -72,6 +72,11 @@
       "responsibility": "带凭据的客户应答和应答重试"
     },
     {
+      "id": "failures",
+      "path": "quaybell/failures.py",
+      "responsibility": "临时限流与永久拒绝的分类归一和兼容别名"
+    },
+    {
       "id": "outcomes",
       "path": "quaybell/outcomes.py",
       "responsibility": "由尝试结果计算终态或下一次就绪"
@@ -307,6 +312,26 @@
         "disposition",
         "outcomes",
         "policy",
+        "attempts"
+      ]
+    },
+    {
+      "id": "classify",
+      "name": "临时限流与永久拒绝分别处置",
+      "entry": "POST /v1/deliveries/{id}/nack",
+      "success": "限流与超时按绑定策略退避，永久拒绝首次即死信",
+      "failure": "旧消费者只传 reason 时保持普通失败退避",
+      "verification": "python3 -m examples.walkthrough classify",
+      "steps": [
+        "通过可选 classification 或兼容别名字段表达 rate_limited/permanent",
+        "限流按处置时间退避，回收超时按原租约截止时间退避",
+        "永久拒绝立即死信并记录 permanent_rejection，预算用尽记录 max_attempts"
+      ],
+      "module_ids": [
+        "failures",
+        "disposition",
+        "outcomes",
+        "expiry",
         "attempts"
       ]
     },

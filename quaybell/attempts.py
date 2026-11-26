@@ -1,9 +1,10 @@
 import secrets
 
-from . import codec
+from . import codec, failures
 from .errors import conflict
 
-PUBLIC = 'id,delivery_id,number,worker,started,expires,outcome,finished,reason'
+PUBLIC = ('id,delivery_id,number,worker,started,expires,outcome,finished,reason,'
+          'classification')
 
 
 def open_attempt(db, delivery, worker, now, seconds):
@@ -33,11 +34,21 @@ def expired(db, now, limit, subscription_id=None):
     return [dict(row) for row in db.execute(query + ' ORDER BY a.expires,a.id LIMIT ?', (*values, limit))]
 
 
-def finish(db, attempt, outcome, reason, now, receipt):
-    db.execute('UPDATE attempts SET outcome=?,reason=?,finished=?,receipt=? WHERE id=?',
-               (outcome, reason, now, codec.pack(receipt), attempt['id']))
+def finish(db, attempt, outcome, reason, now, receipt, classification=None):
+    db.execute('''UPDATE attempts SET outcome=?,reason=?,finished=?,receipt=?,classification=?
+                  WHERE id=?''',
+               (outcome, reason, now, codec.pack(receipt), classification, attempt['id']))
 
 
 def for_delivery(db, key):
-    return [dict(row) for row in db.execute(
+    rows = [dict(row) for row in db.execute(
         f'SELECT {PUBLIC} FROM attempts WHERE delivery_id=? ORDER BY number', (key,))]
+    for row in rows:
+        # 旧记录没有分类列值时，按结果回退，保证历史仍可解释。
+        classification = row.get('classification') or (
+            failures.TIMEOUT if row['outcome'] == 'expired'
+            else failures.FAILED if row['outcome'] == 'nacked' else None)
+        row['classification'] = classification
+        if classification is not None:
+            row.update(failures.class_fields(classification))
+    return rows

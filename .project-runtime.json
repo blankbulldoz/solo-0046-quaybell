@@ -51,6 +51,10 @@
       "command": "python3 -m examples.walkthrough retry"
     },
     {
+      "workflow_id": "classify",
+      "command": "python3 -m examples.walkthrough classify"
+    },
+    {
       "workflow_id": "sweep",
       "command": "python3 -m examples.walkthrough sweep"
     },

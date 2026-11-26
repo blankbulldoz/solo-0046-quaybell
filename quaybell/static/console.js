@@ -85,8 +85,16 @@ function render() {
     `v${item.policy}`, clock(item.published)]), 5, '当前频道没有消息');
   const dead = board?.dead || [];
   $('dead-total').textContent = dead.length ? `最近 ${dead.length} 条` : '';
+  const reasonCell = attempt => {
+    const wrap = node('span');
+    if (attempt?.classification && ['permanent', 'rate_limited'].includes(attempt.classification)) {
+      wrap.append(status(attempt.classification), ' ');
+    }
+    wrap.append(document.createTextNode(attempt?.reason ?? ''));
+    return wrap;
+  };
   rows('dead-rows', dead.map(item => [traceLink(item.message_id, `#${item.id}`), item.group_name,
-    item.last_attempt.reason, item.redriven_as ? `已追加 #${item.redriven_as}` :
+    reasonCell(item.last_attempt), item.redriven_as ? `已追加 #${item.redriven_as}` :
       button('重投', async () => {
         const result = await api(`/deliveries/${item.id}/redrive`, {});
         notice(`重投记录 #${result.delivery_id}`);
@@ -101,22 +109,37 @@ function renderLeases() {
   $('leases').replaceChildren(...entries.map(item => {
     const card = node('div', '', 'lease-card');
     const reason = node('input');
-    reason.placeholder = '填写拒绝原因';
+    reason.placeholder = '填写拒绝原因（旧消费者只传文字也兼容）';
     reason.setAttribute('aria-label', `投递 ${item.delivery_id} 的拒绝原因`);
     reason.maxLength = 240;
+    const classification = document.createElement('select');
+    classification.setAttribute('aria-label', `投递 ${item.delivery_id} 的失败处置`);
+    for (const [value, label] of [['', '按原因普通拒绝（退避重试）'],
+      ['rate_limited', '临时限流（退避后重试）'], ['permanent', '永久拒绝（立即死信）']]) {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      classification.append(option);
+    }
     const actions = node('div', '', 'button-row');
     const settle = action => async () => {
       const data = {token: item.lease.token};
-      if (action === 'nack') data.reason = reason.value;
+      if (action === 'nack') {
+        data.reason = reason.value;
+        if (classification.value) data.classification = classification.value;
+      }
       const result = await api(`/deliveries/${item.delivery_id}/${action}`, data);
       state.leases.delete(item.delivery_id);
-      notice(`投递 #${item.delivery_id}：${TEXT[result.state]}`);
+      const detail = result.state === 'waiting' && result.next_attempt_at
+        ? `，下次最早 ${clock(result.next_attempt_at)}`
+        : result.terminal_reason ? `，${TEXT[result.terminal_reason] || result.terminal_reason}` : '';
+      notice(`投递 #${item.delivery_id}：${TEXT[result.state]}${detail}`);
       await refresh();
     };
     actions.append(button('确认', settle('ack')), button('拒绝', settle('nack'), {className: 'danger'}),
       button('移除卡片', () => { state.leases.delete(item.delivery_id); renderLeases(); }));
     card.append(node('p', `投递 #${item.delivery_id} · 第 ${item.lease.number} 次`, 'mono'),
-      node('p', `租约截止 ${clock(item.lease.expires)}`, 'muted'), reason, actions);
+      node('p', `租约截止 ${clock(item.lease.expires)}`, 'muted'), classification, reason, actions);
     return card;
   }));
 }
@@ -132,9 +155,19 @@ async function trace(id) {
     const label = node('h4', `#${item.id} · ${item.group_name} · v${item.policy} `);
     if (item.parent_id) label.append(`· 源投递 #${item.parent_id} `);
     label.append(status(item.state));
+    if (item.terminal_reason) {
+      label.append(node('span', ` · 终结原因：${TEXT[item.terminal_reason] || item.terminal_reason}`, 'muted'));
+    }
+    if (item.state === 'waiting') {
+      label.append(node('span', ` · 最早再领 ${clock(item.ready_at)}`, 'muted'));
+    }
+    const classTag = a => (a.classification === 'rate_limited' || a.classification === 'permanent')
+      ? `【${TEXT[a.classification]}】` : '';
     const entries = node('ul', '', 'trace-attempts');
     entries.append(...item.attempts.map(a => node('li',
-      `第 ${a.number} 次 · ${a.worker} · ${TEXT[a.outcome]} · ${clock(a.started)}${a.reason ? ` · ${a.reason}` : ''}`)));
+      `第 ${a.number} 次 · ${a.worker} · ${TEXT[a.outcome]}${classTag(a)} · 发放 ${clock(a.started)}`
+      + ` · 截止 ${clock(a.expires)}${a.finished ? ` · 处置 ${clock(a.finished)}` : ''}`
+      + `${a.reason ? ` · ${a.reason}` : ''}`)));
     section.append(label, entries);
     return section;
   }));

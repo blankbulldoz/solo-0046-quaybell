@@ -26,8 +26,9 @@ def lease(db, key, number):
     db.execute("UPDATE deliveries SET state='leased',attempt_count=? WHERE id=?", (number, key))
 
 
-def close(db, key, state, when):
+def close(db, key, state, when, terminal_reason=None):
     if state == 'waiting':
         db.execute('UPDATE deliveries SET state=?,ready_at=? WHERE id=?', (state, when, key))
     else:
-        db.execute('UPDATE deliveries SET state=?,terminal_at=? WHERE id=?', (state, when, key))
+        db.execute('''UPDATE deliveries SET state=?,terminal_at=?,terminal_reason=?
+                      WHERE id=?''', (state, when, terminal_reason, key))

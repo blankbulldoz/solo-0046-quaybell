@@ -1,4 +1,4 @@
-from . import catalog, claims, disposition, expiry, inputs, publication, redrive, retention, subscriptions
+from . import catalog, claims, disposition, expiry, failures, inputs, publication, redrive, retention, subscriptions
 from .protocol import Reply
 
 
@@ -18,6 +18,12 @@ def write(db, action, args, raw, now):
         return Reply(claims.claim(db, *args, raw, now))
     if action in ('ack', 'nack'):
         return Reply(disposition.settle(db, int(args[0]), raw, now, action + 'ed'))
+    if action == 'reject':
+        # 永久拒绝的显式别名：未给原因时补一条标准原因。
+        raw = dict(raw)
+        raw.setdefault('reason', '消费者明确永久拒绝该消息')
+        return Reply(disposition.settle(db, int(args[0]), raw, now, 'nacked',
+                                       forced_classification=failures.PERMANENT))
     if action == 'sweep':
         return Reply(expiry.sweep(db, raw, now))
     if action == 'redrive':
