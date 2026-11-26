@@ -39,6 +39,10 @@
       "command": "python3 -m examples.walkthrough pause"
     },
     {
+      "workflow_id": "drain",
+      "command": "python3 -m examples.walkthrough drain"
+    },
+    {
       "workflow_id": "claim",
       "command": "python3 -m examples.walkthrough claim"
     },

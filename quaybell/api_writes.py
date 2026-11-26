@@ -1,4 +1,4 @@
-from . import catalog, claims, disposition, expiry, inputs, publication, redrive, retention, subscriptions
+from . import catalog, claims, disposition, drain, expiry, inputs, publication, redrive, retention, subscriptions
 from .protocol import Reply
 
 
@@ -11,6 +11,14 @@ def write(db, action, args, raw, now):
         return Reply(subscriptions.create(db, *args, raw, now), 201)
     if action == 'pause':
         return Reply(subscriptions.pause(db, *args, raw, now))
+    if action == 'drain':
+        return Reply(drain.begin(db, *args, raw, now))
+    if action == 'drain_retry':
+        return Reply(drain.retry(db, *args, raw, now))
+    if action == 'drain_confirm':
+        return Reply(drain.confirm_report(db, *args, raw, now))
+    if action == 'drain_resume':
+        return Reply(drain.explicit_resume(db, *args, raw, now))
     if action == 'publish':
         item = publication.publish(db, *args, raw, now)
         return Reply(item, 200 if item['repeated'] else 201)

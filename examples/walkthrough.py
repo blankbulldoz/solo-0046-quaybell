@@ -86,6 +86,67 @@ def pause(client):
     return {'resumed_delivery': client.claim()[0]['delivery_id']}
 
 
+def drain(client):
+    client.channel()
+    client.subscribe()
+    acked_message = client.publish('ack-one', 'lane-north')
+    client.publish('expire-one', 'lane-south')
+    successor_message = client.publish('successor', 'lane-north')
+    first, second = client.claim(2)
+    acked_id, expiring_id = first['delivery_id'], second['delivery_id']
+
+    started = client.request(GROUP + '/drain', {'timeout_seconds': 30})
+    current_round = started['round']
+    assert started['state'] == 'draining' and started['paused'] is True
+    assert set(started['in_hand_ids']) == {acked_id, expiring_id}
+    # Pausing must stop fresh leases immediately.
+    assert client.claim() == []
+
+    # Clicking resume before the drain finishes is refused with the round.
+    blocked = client.request(GROUP + '/pause', {'paused': False}, 409)
+    assert blocked['round'] == current_round and blocked['drain_round'] == current_round
+
+    # One normal acknowledgement...
+    assert client.settle(first)['state'] == 'acked'
+    # ...one natural lease expiry (no explicit nack)...
+    client.tick(4)
+    report = client.request(GROUP + '/drain')
+    assert report['round'] == current_round
+    assert report['completed_ids'] == [acked_id]
+    assert report['expired_ids'] == [expiring_id]
+    assert report['requeued_ids'] == [expiring_id]
+    assert report['in_hand_ids'] == []
+    # ...and the never-claimed same-lane successor stays queued, unclaimed.
+    successor_id = successor_message['fanout']['oscillator']
+    assert successor_id in report['unclaimed_ids']
+    assert successor_id in report['waiting_ids']
+    assert report['state'] == 'completed'
+    # Re-reading keeps reporting the same stable round.
+    assert client.request(GROUP + '/drain')['round'] == current_round
+
+    # A confirmed resume lets consumers take the successor again.
+    client.request(GROUP + '/drain/resume', {})
+    next_item = client.claim()[0]
+    assert next_item['delivery_id'] == successor_id
+
+    # A short limit lapses with work still in hand: retry opens the next round,
+    # and every conflict/retry response names its own round.
+    short = client.request(GROUP + '/drain', {'timeout_seconds': 1})
+    timed_round = short['round']
+    assert short['state'] == 'draining' and short['in_hand_ids'] == [successor_id]
+    client.request(GROUP + '/pause', {'paused': False}, 409)
+    client.tick(2)
+    retried = client.request(GROUP + '/drain/retry', {'timeout_seconds': 5})
+    assert retried['round'] == timed_round + 1 and retried['state'] == 'draining'
+    assert client.request(GROUP + '/pause', {'paused': False}, 409)['round'] == retried['round']
+    # The operator can still force a confirmed early resume.
+    confirmed = client.request(GROUP + '/pause', {'paused': False, 'confirm': True})
+    assert confirmed['round'] == retried['round'] and confirmed['state'] == 'resumed'
+    return {'rounds': [current_round, timed_round, retried['round']],
+            'completed': report['completed_ids'], 'requeued': report['requeued_ids'],
+            'unclaimed': report['unclaimed_ids']}
+
+
 def claim(client):
     client.channel()
     client.subscribe()
@@ -208,8 +269,8 @@ def export(client):
 
 
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
-             inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             inspect=inspect, pause=pause, drain=drain, claim=claim, ack=ack, retry=retry, sweep=sweep,
+             dead=dead, redrive=redrive, board=board, retention=retention, export=export)
 
 
 def main():

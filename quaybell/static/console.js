@@ -1,6 +1,6 @@
 import {$, TEXT, api, button, clock, node, notice, onForm, parse, rows, run, status} from './relay.js';
 
-const state = {channel: null, group: null, board: null, sequence: 0, retention: null, leases: new Map()};
+const state = {channel: null, group: null, board: null, sequence: 0, retention: null, leases: new Map(), drain: null};
 const policyFields = ['lease_seconds', 'retry_seconds', 'max_attempts', 'retention_seconds'];
 const group = () => state.board?.groups.find(item => item.name === state.group);
 const channelPath = () => `/channels/${state.channel}`;
@@ -46,6 +46,7 @@ async function refresh() {
   $('channels').replaceChildren(...(topology.length ? topology.map(({name}) =>
     selectButton(name, name === state.channel, () => choose(name))) : [node('p', '暂无频道', 'muted')]));
   render();
+  await refreshDrain();
 }
 
 function render() {
@@ -94,6 +95,108 @@ function render() {
         await refresh();
       })]), 4, '当前频道没有死信');
   renderLeases();
+  renderDrain();
+}
+
+function drainList(id, items, emptyText) {
+  const target = $(id);
+  if (!target) return;
+  if (!items?.length) {
+    const li = node('li', emptyText, 'muted');
+    target.replaceChildren(li);
+    return;
+  }
+  target.replaceChildren(...items.map(item => {
+    const li = node('li');
+    const did = item.delivery_id ?? item.id;
+    const bits = [`#${did}`];
+    if (item.lane) bits.push(item.lane);
+    if (item.worker) bits.push(item.worker);
+    if (item.remaining_seconds != null) bits.push(`剩 ${Math.max(0, Math.ceil(item.remaining_seconds))}s`);
+    if (item.effective_at != null && item.state === 'waiting') bits.push(`重试于 ${clock(item.effective_at)}`);
+    li.textContent = bits.join(' · ');
+    return li;
+  }));
+}
+
+function renderDrain() {
+  const summary = $('drain-summary');
+  if (!summary) return;
+  const drain = state.drain;
+  const selected = group();
+  const panel = $('drain-panel');
+  if (panel) panel.open = drain?.active ? true : panel.open;
+  if (!selected || !drain || drain.round === 0) {
+    summary.textContent = selected ? '尚未发起排空；点击“开始排空”或“暂停取件”并确认。' : '请先选择消费组。';
+    for (const key of ['drain-count-completed', 'drain-count-inhand', 'drain-count-requeued', 'drain-count-unclaimed']) {
+      $(key).textContent = '0';
+    }
+    drainList('drain-completed', [], '—');
+    drainList('drain-inhand', [], '—');
+    drainList('drain-requeued', [], '—');
+    drainList('drain-unclaimed', [], '—');
+    $('drain-retry').hidden = true;
+    $('drain-confirm').hidden = true;
+    return;
+  }
+  const counts = drain.counts || {};
+  $('drain-count-completed').textContent = counts.completed ?? drain.completed?.length ?? 0;
+  $('drain-count-inhand').textContent = counts.in_hand ?? drain.in_hand?.length ?? 0;
+  $('drain-count-requeued').textContent = counts.requeued ?? drain.requeued?.length ?? 0;
+  $('drain-count-unclaimed').textContent = counts.unclaimed ?? drain.unclaimed?.length ?? 0;
+  drainList('drain-completed', drain.completed, '本轮暂无已完成');
+  drainList('drain-inhand', drain.in_hand, '手上已无未结租约');
+  drainList('drain-requeued', drain.requeued, '没有转成未领重试的项');
+  drainList('drain-unclaimed', drain.unclaimed, '没有尚未领取的投递');
+  const stateText = TEXT[drain.state] || drain.state;
+  const deadline = drain.deadline ? ` · 截止 ${clock(drain.deadline)}` : '';
+  const left = drain.active ? ` · 剩余约 ${Math.ceil(drain.remaining_seconds ?? 0)}s` : '';
+  summary.textContent = `第 ${drain.round} 轮 · ${stateText}${deadline}${left}`;
+  $('drain-retry').hidden = !(drain.timed_out || drain.state === 'timed_out');
+  $('drain-confirm').hidden = drain.active || drain.state !== 'completed';
+}
+
+async function refreshDrain() {
+  if (!state.channel || !state.group) { state.drain = null; renderDrain(); return; }
+  const wanted = state.group;
+  try {
+    const drain = await api(`${groupPath()}/drain`);
+    if (state.group === wanted) { state.drain = drain; renderDrain(); }
+  } catch {
+    // The board render already covers topology; drain panel stays quiet.
+  }
+}
+
+async function startDrain() {
+  if (!group()) return;
+  const seconds = Number($('drain-timeout').value);
+  if (!window.confirm(`将停止向 ${state.group} 发放新租约，并排空手上工作（限时 ${Number.isFinite(seconds) ? seconds : 30} 秒）。确认开始？`)) return;
+  const report = await api(`${groupPath()}/drain`, {timeout_seconds: Number.isFinite(seconds) ? seconds : 30});
+  state.drain = report;
+  notice(`第 ${report.round} 轮排空已开始`);
+  await refresh();
+}
+
+async function resumeGroup() {
+  if (!group()) return;
+  try {
+    const report = await api(`${groupPath()}/pause`, {paused: false});
+    state.drain = report.drain || state.drain;
+    notice(`已恢复取件${report.round ? `（结束第 ${report.round} 轮排空）` : ''}`);
+  } catch (problem) {
+    const body = problem.body || {};
+    const round = body.round ?? body.drain_round ?? body.details?.round;
+    if (problem.status === 409 && round != null) {
+      const held = body.drain?.counts?.in_hand ?? body.drain?.in_hand?.length ?? '';
+      if (!window.confirm(`第 ${round} 轮排空尚未结束${held ? `，仍有 ${held} 项在手上` : ''}。确定提前恢复并继续发租约？`)) return;
+      const report = await api(`${groupPath()}/pause`, {paused: false, confirm: true, round});
+      state.drain = report.drain || state.drain;
+      notice(`已确认提前恢复，第 ${round} 轮排空标记为已恢复`);
+    } else {
+      throw problem;
+    }
+  }
+  await refresh();
 }
 
 function renderLeases() {
@@ -189,9 +292,27 @@ onForm('revise', async values => {
 });
 $('toggle-group').addEventListener('click', () => run(async () => {
   if (!group()) return;
-  await api(`${groupPath()}/pause`, {paused: !group().paused});
+  if (group().paused) await resumeGroup();
+  else await startDrain();
+}, $('toggle-group')));
+$('drain-start')?.addEventListener('click', () => run(startDrain, $('drain-start')));
+$('drain-resume')?.addEventListener('click', () => run(resumeGroup, $('drain-resume')));
+$('drain-retry')?.addEventListener('click', () => run(async () => {
+  if (!group()) return;
+  const seconds = Number($('drain-timeout').value);
+  const report = await api(`${groupPath()}/drain/retry`,
+                          {timeout_seconds: Number.isFinite(seconds) ? seconds : 30});
+  state.drain = report;
+  notice(`已开始第 ${report.round} 轮排空`);
   await refresh();
-}));
+}, $('drain-retry')));
+$('drain-confirm')?.addEventListener('click', () => run(async () => {
+  if (!group()) return;
+  const report = await api(`${groupPath()}/drain/confirm`, {});
+  state.drain = report;
+  notice(`第 ${report.round} 轮排空结果已确认`);
+  renderDrain();
+}, $('drain-confirm')));
 $('recover').addEventListener('click', () => run(async () => {
   const report = await api('/sweep', {limit: 100});
   notice(`已回收 ${report.recovered.length} 个过期租约`);
@@ -217,3 +338,8 @@ $('retention-apply').addEventListener('click', () => run(async () => {
 }));
 render();
 run(refresh);
+// While a drain round is open, periodically observe it so the operator sees
+// items move from “still in hand” to completed / requeued without a manual poll.
+setInterval(() => {
+  if (state.drain?.active && state.channel && state.group) void refreshDrain();
+}, 2500);

@@ -34,10 +34,58 @@ def create(db, channel, raw, now):
 
 
 def pause(db, channel, group, raw, now):
-    inputs.require(raw, ('paused',))
+    # The pause entry is also the drain entry, so it accepts optional drain
+    # fields (timeout / confirmation / round correlation) in addition to
+    # ``paused``.  Validate the one required field strictly but tolerate the
+    # drain vocabulary.
+    if not isinstance(raw, dict) or 'paused' not in raw:
+        inputs.require(raw or {}, ('paused',))
     desired = inputs.boolean(raw['paused'], '暂停状态')
     record = get(db, channel, group)
-    if desired != record['paused']:
-        db.execute('UPDATE subscriptions SET paused=? WHERE id=?', (desired, record['id']))
-        journal.append(db, channel, now, 'group_paused' if desired else 'group_resumed', {'group': group})
-    return get(db, channel, group)
+
+    # Imported lazily: drain depends on this module, so a module-level import
+    # would create an import cycle.
+    from . import drain
+
+    descriptor = None
+    if desired:
+        was_paused = bool(record['paused'])
+        if not was_paused:
+            db.execute('UPDATE subscriptions SET paused=1 WHERE id=?', (record['id'],))
+            journal.append(db, channel, now, 'group_paused', {'group': group, 'drain': True})
+            record = get(db, channel, group)
+        # Pausing starts (or correlates with) the current drain round.  A
+        # genuine pause gesture from an active group opens a fresh round even
+        # if an older terminal round exists; a redundant paused=true call is
+        # idempotent and just observes the current round.
+        drain_raw = dict(raw)
+        if not was_paused:
+            drain_raw.setdefault('retry', True)
+        descriptor = drain.start_from_pause(db, channel, record, drain_raw, now)
+        record = get(db, channel, group)
+    else:
+        # Raises 409 carrying the active round when a drain is unfinished and
+        # the caller has not explicitly confirmed the early resume.
+        descriptor = drain.resume(db, channel, record, raw, now)
+        if record['paused']:
+            db.execute('UPDATE subscriptions SET paused=0 WHERE id=?', (record['id'],))
+            journal.append(db, channel, now, 'group_resumed',
+                           {'group': group,
+                            'drain_round': descriptor.get('round') if descriptor else None})
+            record = get(db, channel, group)
+        if descriptor is not None:
+            descriptor['paused'] = False
+            descriptor['active'] = False if descriptor.get('state') == 'resumed' else descriptor['active']
+
+    reply = dict(record)
+    if descriptor:
+        group_id = reply['id']
+        reply.update(descriptor)
+        # Preserve the subscription identity from the original pause contract;
+        # the round identity lives in round/drain_round/round_id.
+        reply['id'] = group_id
+        reply['subscription_id'] = group_id
+        # Keep the nested copy consistent with the merged top-level view.
+        reply['drain'] = {k: v for k, v in descriptor.items() if k != 'drain'} | {
+            'paused': reply['paused'], 'subscription_id': group_id}
+    return reply

@@ -14,7 +14,12 @@
     {
       "id": "subscriptions",
       "path": "quaybell/subscriptions.py",
-      "responsibility": "标签订阅和取件开关"
+      "responsibility": "标签订阅和取件开关，暂停入口接入排空轮次"
+    },
+    {
+      "id": "drain",
+      "path": "quaybell/drain.py",
+      "responsibility": "升级排空轮次、限时截止、在手/完成/转重试/未领分类与轮次归属"
     },
     {
       "id": "routing",

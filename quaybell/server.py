@@ -35,7 +35,13 @@ class RelayRequest(BaseHTTPRequestHandler):
         try:
             reply = self.resolve_route(method)
         except RelayError as exc:
-            reply = protocol.Reply({'error': exc.code, 'message': str(exc)}, exc.status)
+            payload = {'error': exc.code, 'message': str(exc)}
+            if exc.details:
+                payload['details'] = exc.details
+                # Correlation fields (e.g. the active drain round) are also
+                # exposed at the top level so retry scripts need no digging.
+                payload.update(exc.details)
+            reply = protocol.Reply(payload, exc.status)
         except sqlite3.OperationalError as exc:
             if getattr(exc, 'sqlite_errorcode', 0) & 255 in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
                 reply = protocol.Reply({'error': 'busy', 'message': '中继存储繁忙，请稍后按原身份重试'}, 503)
@@ -68,7 +74,8 @@ class RelayRequest(BaseHTTPRequestHandler):
             raise missing('找不到此接口')
         action, args = route
         if method == 'GET':
-            with self.server.persistence.session() as db:
+            write_view = action in api_reads.WRITE_GET_ACTIONS
+            with self.server.persistence.session(write=write_view) as db:
                 return api_reads.read(db, action, args, self.server.clock())
         raw = protocol.receive(self)
         with self.server.persistence.session(write=action != 'preview') as db:

@@ -140,3 +140,12 @@ pre { padding: 10px; border-radius: 5px; background: #eef3ed; white-space: pre-w
   .subbrand, #observed { display: none; }
   .workspace-head { align-items: flex-start; }
 }
+.drain-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.drain-grid section { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; background: #f9faf7; min-width: 0; }
+.drain-grid h3 { margin: 0 0 4px; font-size: .82rem; display: flex; justify-content: space-between; gap: 6px; }
+.drain-grid h3 em { font-style: normal; font-weight: 700; color: var(--accent); }
+.drain-grid ul { list-style: none; margin: 0; padding: 0; max-height: 132px; overflow: auto; }
+.drain-grid li { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .74rem; padding: 2px 0; border-top: 1px dashed var(--line); overflow-wrap: anywhere; }
+.drain-grid li:first-child { border-top: 0; }
+#drain-summary { display: block; margin-top: 6px; }
+@media (max-width: 600px) { .drain-grid { grid-template-columns: 1fr; } }

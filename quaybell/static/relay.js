@@ -4,6 +4,8 @@ export const TEXT = {
   leased: '租约中', expired: '租约超时', acked: '已确认', nacked: '已拒绝',
   waiting: '等待中', dead: '死信', open: '未应答', leased_event: '发放租约',
   published: '已发布', redriven: '重投',
+  draining: '排空中', completed: '排空完成', timed_out: '排空超时', resumed: '已提前恢复',
+  idle: '尚未排空',
 };
 
 export async function api(path, data) {
@@ -12,7 +14,12 @@ export async function api(path, data) {
   };
   const response = await fetch(`/v1${path}`, options);
   const body = await response.json();
-  if (!response.ok) throw new Error(body.message || `请求失败（${response.status}）`);
+  if (!response.ok) {
+    const problem = new Error(body.message || `请求失败（${response.status}）`);
+    problem.status = response.status;
+    problem.body = body;
+    throw problem;
+  }
   return body;
 }
 

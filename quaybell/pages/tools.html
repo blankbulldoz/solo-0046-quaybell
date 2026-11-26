@@ -28,6 +28,26 @@
     </form>
     <div class="leases" id="leases"></div>
   </details>
+  <details data-needs-channel id="drain-panel">
+    <summary>升级前排空消费者组</summary>
+    <div class="compact">
+      <p class="muted">确认后停止发放新租约，手上工作在限时内确认或自然过期；过期项转为未领重试，同键后继继续排队。</p>
+      <label>排空限时（秒）<input name="drain_timeout" id="drain-timeout" type="number" min="0" max="604800" value="30"></label>
+      <div class="button-row">
+        <button type="button" id="drain-start">开始排空</button>
+        <button type="button" id="drain-retry" class="quiet" hidden>超时后重试排空</button>
+        <button type="button" id="drain-resume" class="quiet">恢复取件</button>
+        <button type="button" id="drain-confirm" class="quiet" hidden>确认排空结果</button>
+      </div>
+      <output class="muted" id="drain-summary" aria-live="polite"></output>
+      <div class="drain-grid" id="drain-grid">
+        <section><h3>已完成 <em id="drain-count-completed">0</em></h3><ul id="drain-completed"></ul></section>
+        <section><h3>仍在手上 <em id="drain-count-inhand">0</em></h3><ul id="drain-inhand"></ul></section>
+        <section><h3>转未领重试 <em id="drain-count-requeued">0</em></h3><ul id="drain-requeued"></ul></section>
+        <section><h3>尚未领（含同键后继） <em id="drain-count-unclaimed">0</em></h3><ul id="drain-unclaimed"></ul></section>
+      </div>
+    </div>
+  </details>
   <details data-needs-channel>
     <summary>修订策略</summary>
     <form id="revise" class="compact">

@@ -71,6 +71,19 @@ CREATE TABLE IF NOT EXISTS journal (
   kind TEXT NOT NULL,
   details TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS drain_rounds (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  subscription_id INTEGER NOT NULL REFERENCES subscriptions(id),
+  round_no INTEGER NOT NULL,
+  state TEXT NOT NULL CHECK(state IN ('draining','completed','timed_out','resumed')),
+  timeout_seconds REAL NOT NULL,
+  started REAL NOT NULL,
+  deadline REAL NOT NULL,
+  journal_from INTEGER NOT NULL DEFAULT 0,
+  finished REAL,
+  confirmed_at REAL,
+  UNIQUE(subscription_id, round_no)
+);
 CREATE INDEX IF NOT EXISTS delivery_lane ON deliveries(subscription_id,lane,id)
   WHERE state IN ('waiting','leased');
 CREATE INDEX IF NOT EXISTS delivery_origin ON deliveries(message_id,id);
@@ -78,4 +91,5 @@ CREATE INDEX IF NOT EXISTS attempt_deadline ON attempts(expires,id) WHERE outcom
 CREATE UNIQUE INDEX IF NOT EXISTS one_open_attempt ON attempts(delivery_id) WHERE outcome='open';
 CREATE INDEX IF NOT EXISTS message_channel ON messages(channel,published,id);
 CREATE INDEX IF NOT EXISTS journal_message ON journal(message_id,id);
+CREATE INDEX IF NOT EXISTS drain_subscription ON drain_rounds(subscription_id,round_no);
 '''
