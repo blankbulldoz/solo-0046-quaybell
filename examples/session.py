@@ -54,6 +54,16 @@ class Session:
             data['reason'] = '下游拒绝校验帧'
         return self.request(f"/deliveries/{item['delivery_id']}/{mode}", data, expected)
 
+    def entry(self, item, disposition, reason=None, token=None):
+        data = {'delivery_id': item['delivery_id'], 'disposition': disposition,
+                'token': token or item['lease']['token']}
+        if reason is not None:
+            data['reason'] = reason
+        return data
+
+    def deposit(self, key, worker, entries, expected=201):
+        return self.request('/receipts', {'batch': key, 'worker': worker, 'entries': entries}, expected)
+
 
 def envelope(key='signal-1', lane='coil-north', **extra):
     return dict(producer='signal-source', key=key, lane=lane, payload={'value': 18},

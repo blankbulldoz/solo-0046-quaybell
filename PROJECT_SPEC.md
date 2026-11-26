@@ -11,11 +11,12 @@ Quaybell 是面向内部服务集成的持久消息中间件。应用通过 HTTP
 - 明确拒绝的退避以处置时间起算，超时退避以租约截止时间起算。退避从原策略初始值指数增长，最长一小时。尝试数用尽时，投递进入死信。重投追加一条本组投递，绑定当前策略并加入所在顺序键的队尾。每条死信只追加一个直接后继，后继可独立失败。
 - 清理时按消息发布时绑定的保留秒数比较年龄，并检查整条消息的所有派生分发。清理在写事务内重新计算，删除原信封、原回执、尝试和消息级审计。之后原生产键可复用。频道级清理记录保留被删 ID。
 - 租约、公示时间和就绪时间都是 Unix 秒。同步 API 返回 JSON。证据导出绑定一个观察时间和读取快照，去除租约凭据并提供内容摘要。
+- 离线网关可把一次消费者处理批的多份 ACK/NACK 混合回执作为一个存件批次提交，登记为一张可按编号查询的上传收据。批次以稳定批次标识和规范化条目摘要幂等，掉线后重传完整原批返回同一张收据。逐条状态区分首次生效（applied）、先前已确认（replayed）、已失效凭据（stale）和同租约矛盾（conflict）。同一租约在批内携带相互矛盾的结果时相关条目全部标冲突且不生效，其余有效回执在同一事务内正常提交；存件只保留凭据摘要。单项 ack/nack 接口仍可独立工作。
 
 ## 职责
 
-`catalog`、`policy` 和 `subscriptions` 管辖拓扑与版本；`envelope`、`routing` 和 `publication` 从信封生成分发；`delivery`、`eligibility`、`attempts` 和 `claims` 一起决定谁能领取；`disposition`、`expiry` 和 `outcomes` 确保处置及重试一致；`inspection`、`overview`、`retention` 和 `evidence` 提供查询和保留处置。`persistence` 定义 SQLite 事务边界，接入层负责请求体和响应，控制台使用单页的公开 JSON 接口。
+`catalog`、`policy` 和 `subscriptions` 管辖拓扑与版本；`envelope`、`routing` 和 `publication` 从信封生成分发；`delivery`、`eligibility`、`attempts` 和 `claims` 一起决定谁能领取；`disposition`、`expiry` 和 `outcomes` 确保处置及重试一致；`receipts` 负责离线批回执存件、逐条分类和收据查询；`inspection`、`overview`、`retention` 和 `evidence` 提供查询和保留处置。`persistence` 定义 SQLite 事务边界，接入层负责请求体和响应，控制台使用单页的公开 JSON 接口。
 
 ## 验证边界
 
-`examples.walkthrough` 每次起一个真实 HTTP 实例，通过公共入口展示成功和边界拒绝。当前发布用这些有界生产工作流做验证。独立测试套件延后建设。
+`examples.walkthrough` 每次起一个真实 HTTP 实例，通过公共入口展示成功和边界拒绝。当前发布用这些有界生产工作流做验证。`deposit` 覆盖混合 ACK/NACK、四种逐条状态、收据查询与单项确认独立性，`reconnect` 用掉线后完整原批重传验证可恢复性。独立测试套件延后建设。

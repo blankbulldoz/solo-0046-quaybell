@@ -31,6 +31,8 @@ python3 -m quaybell --demo
 | `/deliveries/{id}/ack` | POST | `token` |
 | `/deliveries/{id}/nack` | POST | `token` 和 `reason` |
 | `/sweep` | POST | `{}` 或 `limit`，按原截止时间回收全局租约 |
+| `/receipts` | POST | 离线批 `batch`、`worker`、`entries`，登记一张可查询上传收据 |
+| `/receipts/{id}` | GET | 读取已登记的上传收据及逐条状态 |
 | `/channels/{channel}/dead` | GET | 最近 50 个失败投递及最后一次尝试 |
 | `/deliveries/{id}/redrive` | POST | `{}`，使用当前策略追加一个后继投递 |
 | `/messages/{id}` | GET | 信封、分发、尝试、消息级处理记录 |
@@ -38,6 +40,12 @@ python3 -m quaybell --demo
 | `/channels/{channel}/retention` | GET / POST | 候选复核，或以 `{}` / `limit` 清理实际合格项 |
 
 默认策略是 `lease_seconds=24`、`retry_seconds=3`、`max_attempts=3`、`retention_seconds=3600`。重发原生产键时复用初始匹配结果，内容变化则返回 409。如果应用侧副作用必须去重，应按消息和消费组身份设计处理键。重投需要按其业务语义明确将后继身份识别为有意重新处理。
+
+### 离线回执存件
+
+网关离线缓存的一整批消费者回执可在重连后一次性提交到 `POST /v1/receipts`。请求包含稳定的 `batch` 批次标识、`worker` 以及 1～100 条 `entries`，每条给出 `delivery_id`、`ack`/`nack` 结果、租约 `token`，`nack` 另附 `reason`，ACK 与 NACK 可混合。收据逐条标明四种状态：`applied` 为首次生效，`replayed` 为先前已确认并复用原收据，`stale` 为凭据不属于该投递或租约已处置、已超时的失效凭据，`conflict` 为同一租约在批内携带相互矛盾的结果——矛盾双方都标冲突且都不生效，其余有效回执照常提交。
+
+批次按 `batch` 与规范化条目摘要做幂等：中途掉线后重新上传完整原批会返回同一张已登记收据（`repeated: true`），不会二次处置；同一 `batch` 若内容不同则返回 409。收据只保存租约凭据的摘要，不回传原始凭据。随后可用 `GET /v1/receipts/{id}` 查询。原有的 `/deliveries/{id}/ack` 与 `/nack` 单项确认接口保持独立可用。
 
 以下载荷可发布到示例频道。默认延迟为零。
 
@@ -52,6 +60,8 @@ python3 -m compileall -q quaybell examples
 python3 -m examples.walkthrough claim
 python3 -m examples.walkthrough retention
 python3 -m examples.walkthrough export
+python3 -m examples.walkthrough deposit
+python3 -m examples.walkthrough reconnect
 ```
 
 每个工作流示例使用临时 SQLite 文件、受控时钟和本机随机端口，运行完即释放。可用 `python3 -m examples.walkthrough --help` 列出所有工作流。正式测试套件延后建设。

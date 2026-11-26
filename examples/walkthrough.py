@@ -207,9 +207,98 @@ def export(client):
     return {'format': record['format'], 'sha256': digest}
 
 
+def deposit(client):
+    client.channel()
+    client.subscribe()
+    for index in range(7):
+        client.publish(f'stack-{index}', f'coil-{index}')
+    items = client.claim(7)
+    assert len(items) == 7
+    solo_item, prior, fresh_ack, fresh_nack = items[6], items[2], items[0], items[1]
+    clash, wrong = items[3], items[5]
+    client.settle(prior)
+    entries = [
+        client.entry(fresh_ack, 'ack'),
+        client.entry(fresh_nack, 'nack', '下游拒绝校验帧'),
+        client.entry(prior, 'ack'),
+        client.entry(clash, 'ack'),
+        client.entry(clash, 'nack', '同批矛盾的拒绝'),
+        client.entry(fresh_ack, 'ack'),
+        client.entry(wrong, 'ack', token='stale-lease'),
+    ]
+    record = client.deposit('gate-batch-7', 'bench-worker', entries)
+    assert record['counts'] == dict(applied=2, replayed=2, stale=1, conflict=2)
+    statuses = [entry['status'] for entry in record['entries']]
+    assert statuses == ['applied', 'applied', 'replayed', 'conflict', 'conflict',
+                        'replayed', 'stale']
+    clash_ack, clash_nack = record['entries'][3], record['entries'][4]
+    assert clash_ack['result'] is None and clash_nack['result'] is None
+    receipt_id = record['receipt_id']
+    assert client.request(f'/receipts/{receipt_id}') == {key: value for key, value in record.items()
+                                                          if key != 'repeated'}
+    client.request('/receipts/99999', expected=404)
+    again = client.deposit('gate-batch-7', 'bench-worker', entries, expected=200)
+    assert again['repeated'] is True and again['receipt_id'] == receipt_id
+    assert {key: value for key, value in again.items() if key != 'repeated'} == \
+        {key: value for key, value in record.items() if key != 'repeated'}
+    client.deposit('gate-batch-7', 'bench-worker', entries[:1], expected=409)
+    client.deposit('bad-shape', 'bench-worker', [], expected=400)
+    client.deposit('bad-shape', 'bench-worker',
+                   [client.entry(fresh_ack, 'ack') | {'reason': '不应携带原因'}], expected=400)
+    one = client.settle(solo_item)
+    assert client.settle(solo_item) == one | {'repeated': True}
+    return {'receipt_id': receipt_id, 'counts': record['counts']}
+
+
+def reconnect(client):
+    client.channel(POLICY | {'max_attempts': 3})
+    client.subscribe()
+    for index in range(5):
+        client.publish(f'queued-{index}', f'lane-{index}')
+    first = client.claim(5)
+    assert len(first) == 5
+    stale_lease, prior = first[2], first[3]
+    client.settle(prior)
+    client.tick(5)
+    client.request('/sweep', {'limit': 100})
+    client.tick(3)
+    second = client.claim(5)
+    fresh_ack = next(item for item in second if item['delivery_id'] == first[0]['delivery_id'])
+    fresh_nack = next(item for item in second if item['delivery_id'] == first[1]['delivery_id'])
+    assert fresh_ack['lease']['number'] == 2 and fresh_nack['lease']['number'] == 2
+    entries = [
+        client.entry(fresh_ack, 'ack'),
+        client.entry(fresh_nack, 'nack', '离线缓存的拒绝'),
+        client.entry(stale_lease, 'ack'),
+        client.entry(prior, 'ack'),
+    ]
+    record = client.deposit('offline-cache-1', 'gate-worker', entries)
+    assert record['counts'] == dict(applied=2, replayed=1, stale=1, conflict=0)
+    statuses = {entry['delivery_id']: entry['status'] for entry in record['entries']}
+    assert statuses == {fresh_ack['delivery_id']: 'applied',
+                        fresh_nack['delivery_id']: 'applied',
+                        stale_lease['delivery_id']: 'stale',
+                        prior['delivery_id']: 'replayed'}
+    reupload = client.deposit('offline-cache-1', 'gate-worker', entries, expected=200)
+    assert reupload['repeated'] is True
+    assert {key: value for key, value in reupload.items() if key != 'repeated'} == \
+        {key: value for key, value in record.items() if key != 'repeated'}
+    client.tick(4)
+    client.request('/sweep', {'limit': 100})
+    client.tick(4)
+    reclaimed = client.claim(5)
+    re_nack = next(item for item in reclaimed if item['delivery_id'] == fresh_nack['delivery_id'])
+    assert re_nack['lease']['number'] == 3
+    solo = client.settle(re_nack)
+    assert solo['state'] == 'acked' and solo['repeated'] is False
+    return {'receipt_id': record['receipt_id'], 'first': record['counts'],
+            'recovered_attempt': re_nack['lease']['number']}
+
+
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             redrive=redrive, board=board, retention=retention, export=export,
+             deposit=deposit, reconnect=reconnect)
 
 
 def main():

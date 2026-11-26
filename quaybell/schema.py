@@ -1,4 +1,4 @@
-VERSION = 1
+VERSION = 2
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS channels (
   name TEXT PRIMARY KEY,
@@ -78,4 +78,25 @@ CREATE INDEX IF NOT EXISTS attempt_deadline ON attempts(expires,id) WHERE outcom
 CREATE UNIQUE INDEX IF NOT EXISTS one_open_attempt ON attempts(delivery_id) WHERE outcome='open';
 CREATE INDEX IF NOT EXISTS message_channel ON messages(channel,published,id);
 CREATE INDEX IF NOT EXISTS journal_message ON journal(message_id,id);
+CREATE TABLE IF NOT EXISTS receipt_batches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  batch_key TEXT NOT NULL UNIQUE,
+  worker TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  created REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS receipt_entries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  batch_id INTEGER NOT NULL REFERENCES receipt_batches(id),
+  position INTEGER NOT NULL,
+  delivery_id INTEGER NOT NULL,
+  disposition TEXT NOT NULL CHECK(disposition IN ('acked','nacked')),
+  token_digest TEXT NOT NULL,
+  reason TEXT,
+  status TEXT NOT NULL CHECK(status IN ('applied','replayed','stale','conflict')),
+  detail TEXT NOT NULL,
+  result TEXT,
+  UNIQUE(batch_id, position)
+);
+CREATE INDEX IF NOT EXISTS receipt_entry_batch ON receipt_entries(batch_id,position);
 '''

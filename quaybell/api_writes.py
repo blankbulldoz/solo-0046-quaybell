@@ -1,4 +1,4 @@
-from . import catalog, claims, disposition, expiry, inputs, publication, redrive, retention, subscriptions
+from . import catalog, claims, disposition, expiry, inputs, publication, receipts, redrive, retention, subscriptions
 from .protocol import Reply
 
 
@@ -26,4 +26,7 @@ def write(db, action, args, raw, now):
         return Reply(item, 200 if item['repeated'] else 201)
     if action == 'prune':
         return Reply(retention.prune(db, *args, raw, now))
+    if action == 'lodge_receipt':
+        record = receipts.lodge(db, raw, now)
+        return Reply(record, 200 if record['repeated'] else 201)
     raise AssertionError(action)

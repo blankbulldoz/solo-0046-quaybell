@@ -73,6 +73,14 @@
     {
       "workflow_id": "export",
       "command": "python3 -m examples.walkthrough export"
+    },
+    {
+      "workflow_id": "deposit",
+      "command": "python3 -m examples.walkthrough deposit"
+    },
+    {
+      "workflow_id": "reconnect",
+      "command": "python3 -m examples.walkthrough reconnect"
     }
   ]
 }
