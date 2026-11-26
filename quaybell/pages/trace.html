@@ -4,6 +4,32 @@
     <form method="dialog"><button class="quiet" aria-label="关闭消息轨迹">关闭</button></form>
   </div>
   <p class="muted" id="trace-meta"></p>
+
+  <section class="compare-panel" aria-labelledby="compare-heading">
+    <h3 id="compare-heading">两组状态对照</h3>
+    <div class="compare-picker">
+      <label>甲组
+        <select id="compare-a" aria-label="对照甲组消费组"></select>
+      </label>
+      <span class="compare-vs" aria-hidden="true">⇄</span>
+      <label>乙组
+        <select id="compare-b" aria-label="对照乙组消费组"></select>
+      </label>
+      <button type="button" id="compare-run">对照两组</button>
+      <a id="compare-download" class="button-link" role="button">导出对照快照</a>
+      <button type="button" id="compare-share" class="quiet">复制共享链接</button>
+    </div>
+    <p class="muted" id="compare-hint">选择两个消费组，对照当前状态与逐条尝试路径。</p>
+    <input id="compare-share-url" class="share-url" type="text" readonly hidden aria-label="可复制的共享对照链接">
+    <p id="compare-freeze-banner" class="freeze-banner" hidden></p>
+    <div id="compare-result" class="compare-grid" aria-live="polite"></div>
+    <footer id="compare-snapshot-foot" class="snapshot-foot" hidden>
+      <span id="compare-observed"></span>
+      <span class="mono" id="compare-sha"></span>
+      <span id="compare-verify" role="status"></span>
+    </footer>
+  </section>
+
   <h3>信封</h3><pre id="trace-envelope"></pre>
   <h3>投递和尝试</h3><div id="trace-deliveries"></div>
   <h3>处理记录</h3><ol id="trace-events" class="timeline"></ol>

@@ -2,12 +2,14 @@ import logging
 import sqlite3
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from time import time
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from . import api_reads, api_writes, presentation, protocol, routes
 from .errors import RelayError, missing
 
 LOG = logging.getLogger(__name__)
+
+READ_POST_ACTIONS = {'preview', 'compare_post', 'compare_body', 'verify_evidence'}
 
 
 class RelayServer(ThreadingHTTPServer):
@@ -60,7 +62,9 @@ class RelayRequest(BaseHTTPRequestHandler):
             return
 
     def resolve_route(self, method):
-        path = urlsplit(self.path).path
+        parsed = urlsplit(self.path)
+        path = parsed.path
+        query = parse_qs(parsed.query, keep_blank_values=True)
         route = routes.match(method, path)
         if route is None:
             if method == 'GET' and not path.startswith('/v1/'):
@@ -69,9 +73,19 @@ class RelayRequest(BaseHTTPRequestHandler):
         action, args = route
         if method == 'GET':
             with self.server.persistence.session() as db:
-                return api_reads.read(db, action, args, self.server.clock())
-        raw = protocol.receive(self)
-        with self.server.persistence.session(write=action != 'preview') as db:
-            if action == 'preview':
-                return api_reads.check_route(db, args[0], raw)
+                return api_reads.read(db, action, args, self.server.clock(), query)
+        raw = protocol.receive(self, protocol.VERIFY_MAX_REQUEST if action == 'verify_evidence'
+                               else protocol.MAX_REQUEST)
+        if action in READ_POST_ACTIONS:
+            with self.server.persistence.session() as db:
+                if action == 'preview':
+                    return api_reads.check_route(db, args[0], raw)
+                if action == 'compare_post':
+                    return api_reads.compare_from_body(db, args[0], raw, self.server.clock())
+                if action == 'compare_body':
+                    message_id = raw.get('message_id') if isinstance(raw, dict) else None
+                    return api_reads.compare_from_body(db, message_id, raw, self.server.clock())
+                if action == 'verify_evidence':
+                    return api_reads.verify(raw)
+        with self.server.persistence.session(write=True) as db:
             return api_writes.write(db, action, args, raw, self.server.clock())

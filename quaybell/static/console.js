@@ -1,4 +1,5 @@
 import {$, TEXT, api, button, clock, node, notice, onForm, parse, rows, run, status} from './relay.js';
+import {groupNames, handleCompareHash, initCompareChrome, runCompare, setupPicker} from './compare-view.js';
 
 const state = {channel: null, group: null, board: null, sequence: 0, retention: null, leases: new Map()};
 const policyFields = ['lease_seconds', 'retry_seconds', 'max_attempts', 'retention_seconds'];
@@ -121,7 +122,7 @@ function renderLeases() {
   }));
 }
 
-async function trace(id) {
+async function trace(id, pair = null) {
   const facts = await api(`/messages/${id}`);
   $('trace-title').textContent = `消息 #${id}`;
   const m = facts.message;
@@ -143,6 +144,24 @@ async function trace(id) {
     `${clock(item.at)} · ${TEXT[item.kind === 'leased' ? 'leased_event' : item.kind]} · ${JSON.stringify(item.details)}`)));
   $('trace-export').href = `/v1/messages/${id}/evidence`;
   $('trace').showModal();
+  await setupTraceCompare(id, facts, pair);
+}
+
+async function setupTraceCompare(id, facts, pair) {
+  let board = state.board;
+  if (!board || board.channel !== facts.message.channel) {
+    try { board = await api(`/channels/${facts.message.channel}`); }
+    catch { board = null; }
+  }
+  const names = groupNames(facts, board);
+  setupPicker({messageId: id, names, pair: pair || undefined});
+  if (names.length >= 2) {
+    try { await runCompare(); }
+    catch (problem) { notice(problem.message || '两组对照加载失败', true); }
+  } else {
+    $('compare-result').replaceChildren();
+    $('compare-snapshot-foot').hidden = true;
+  }
 }
 
 onForm('create-channel', async ({name}) => {
@@ -216,4 +235,6 @@ $('retention-apply').addEventListener('click', () => run(async () => {
   await refresh();
 }));
 render();
+initCompareChrome();
 run(refresh);
+handleCompareHash((id, pair) => trace(id, pair));

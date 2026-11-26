@@ -12,7 +12,7 @@ python3 -m quaybell --demo
 
 示例在所选数据库首次创建 `signal-weir` 时加载两组和四条消息。再次启动会保留状态。省略 `--demo` 从空工作区开始，使用 `--db 路径` 指定独立状态库或 `--port 端口` 更换端口。监听固定在本机回环地址。SQLite 文件及其工作文件默认存于 `.quaybell/`，请为运行用户保留同一目录的写权限。
 
-左栏选择频道和消费组，中栏查看分发、消息和死信，右栏发布、取件、修订策略或清理。点击投递号可以检查该消息下的各组尝试并下载证据。浏览器关闭时，本次页面领到的租约凭据会随页面关闭丢弃，租约到时可回收。演示模式的延迟和租约使用实际系统时钟。
+左栏选择频道和消费组，中栏查看分发、消息和死信，右栏发布、取件、修订策略或清理。点击投递号或消息号可以检查该消息下的各组尝试；在“两组状态对照”里选两个消费组，可并排核对状态与尝试路径：虚线卡表示**当时没有分发**（区分“发布后才建立的组”和“当时标签不匹配”），黄色卡表示**等待**（退避/延迟/阻挡/暂停），紫色标记表示**终败重投后出现的新投递身份**（带新投递号与源投递号）。对照可导出冻结快照，或复制内含快照的共享链接；快照记录 `observed_at` 与 `sha256`，下一次尝试发生后仍可凭摘要核对它看的是哪个时刻。点击“下载证据”可下载完整轨迹。浏览器关闭时，本次页面领到的租约凭据会随页面关闭丢弃，租约到时可回收。演示模式的延迟和租约使用实际系统时钟。
 
 ## HTTP 接口
 
@@ -34,6 +34,9 @@ python3 -m quaybell --demo
 | `/channels/{channel}/dead` | GET | 最近 50 个失败投递及最后一次尝试 |
 | `/deliveries/{id}/redrive` | POST | `{}`，使用当前策略追加一个后继投递 |
 | `/messages/{id}` | GET | 信封、分发、尝试、消息级处理记录 |
+| `/messages/{id}/compare?a={group}&b={group}` | GET | 两组对照：各自状态、等待原因、尝试路径、未分发原因与重投新身份；响应绑定 `observed_at` 并带 `sha256` |
+| `/messages/{id}/compare/evidence?a={group}&b={group}` | GET | 下载 `quaybell-compare/1` 冻结对照快照（观察时刻 + 摘要），路径写法 `/compare/{a}/{b}` 亦可 |
+| `/evidence/verify` | POST | 复核导出/共享快照的 `sha256`，回报它绑定的 `observed_at`（支持 trace 与 compare 格式） |
 | `/messages/{id}/evidence` | GET | `quaybell-trace/1` JSON 下载，摘要针对除 `sha256` 之外的规范化内容 |
 | `/channels/{channel}/retention` | GET / POST | 候选复核，或以 `{}` / `limit` 清理实际合格项 |
 
@@ -52,6 +55,7 @@ python3 -m compileall -q quaybell examples
 python3 -m examples.walkthrough claim
 python3 -m examples.walkthrough retention
 python3 -m examples.walkthrough export
+python3 -m examples.walkthrough compare
 ```
 
 每个工作流示例使用临时 SQLite 文件、受控时钟和本机随机端口，运行完即释放。可用 `python3 -m examples.walkthrough --help` 列出所有工作流。正式测试套件延后建设。

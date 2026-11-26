@@ -7,6 +7,7 @@ from .protocol import Reply
 ASSETS = Path(__file__).parent
 STATIC = {'/static/base.css': 'text/css; charset=utf-8',
           '/static/relay.js': 'text/javascript; charset=utf-8',
+          '/static/compare-view.js': 'text/javascript; charset=utf-8',
           '/static/console.js': 'text/javascript; charset=utf-8'}
 
 

@@ -207,9 +207,109 @@ def export(client):
     return {'format': record['format'], 'sha256': digest}
 
 
+def _claim_as(client, group_name):
+    path = CHANNEL + f'/groups/{group_name}/claim'
+    return client.request(path, {'worker': 'compare-watch', 'limit': 1})['items']
+
+
+def compare(client):
+    """两组对照：未分发（后建组/不匹配）、等待重试、终败重投新身份与冻结快照。"""
+    from quaybell.codec import fingerprint, pack
+
+    client.channel(POLICY | {'max_attempts': 3})
+    client.subscribe('ackers')
+    client.subscribe('retry-team')
+    client.subscribe('dead-team')
+    client.subscribe('mismatch', tags={'feed': 'samples'})
+    sent = client.publish('alert-compare', tags={'feed': 'alerts'})
+    mid = sent['message_id']
+    assert set(sent['fanout']) == {'ackers', 'retry-team', 'dead-team'}
+
+    taken = _claim_as(client, 'ackers')[0]
+    client.settle(taken)
+    retrying = _claim_as(client, 'retry-team')[0]
+    client.settle(retrying, 'nack')
+
+    # 发布之后才建的组；刻意不推进受控时钟，验证事件顺序也能判定“当时不存在”。
+    client.subscribe('late-watch')
+
+    # 在“下一次尝试”之前冻结对照导出。
+    frozen = client.request(f'/messages/{mid}/compare/evidence?a=retry-team&b=ackers')
+    frozen_digest = frozen['sha256']
+    assert fingerprint(pack({k: v for k, v in frozen.items() if k != 'sha256'})) == frozen_digest
+
+    pair = client.request(f'/messages/{mid}/compare?left=retry-team&right=ackers')
+    retry_side, ack_side = pair['left'], pair['right']
+    assert retry_side['status'] == 'waiting' and retry_side['retrying'] is True
+    assert retry_side['markers']['waiting'] is True
+    assert retry_side['current']['kind'] == 'retry_backoff'
+    assert retry_side['current']['retry_in_seconds'] == 3
+    assert ack_side['status'] == 'acked'
+
+    absent = client.request(f'/messages/{mid}/compare?groups=late-watch,mismatch')
+    late, mismatch = absent['sides']
+    assert late['status'] == 'not_dispatched' and late['not_dispatched'] is True
+    assert late['absence_reason'] == 'group_created_after_publication' and late['late'] is True
+    assert late['existed_at_publication'] is False
+    assert mismatch['status'] == 'not_dispatched'
+    assert mismatch['absence_reason'] == 'tags_did_not_match'
+    assert mismatch['existed_at_publication'] is True
+
+    # 终败：max_attempts=3，按尝试代际推进退避时钟。
+    for number in (1, 2, 3):
+        items = _claim_as(client, 'dead-team')
+        assert items, f'dead-team 第 {number} 次尝试应当可领取'
+        client.settle(items[0], 'nack')
+        if number < 3:
+            client.tick(3 * 2 ** (number - 1))
+    dead_row = next(row for row in client.request(CHANNEL + '/dead')['items']
+                    if row['group_name'] == 'dead-team')
+    redriven = client.request(f"/deliveries/{dead_row['id']}/redrive", {}, 201)
+
+    lineage = client.request(f'/messages/{mid}/compare?a=dead-team&b=late-watch')['left']
+    assert lineage['terminal_failure'] is True and dead_row['id'] in lineage['dead_identities']
+    assert lineage['redriven'] is True
+    successor = next(item for item in lineage['new_identities']
+                     if item['delivery_id'] == redriven['delivery_id'])
+    assert successor['parent_id'] == dead_row['id']
+    assert lineage['successor_id'] == redriven['delivery_id']
+    assert any(node['kind'] == 'redrive_identity' and node['new_identity']
+               and node['delivery_id'] == redriven['delivery_id'] for node in lineage['path'])
+
+    # 下一次尝试真的发生：重试组领取第 2 次并确认。
+    client.tick(11)
+    second = _claim_as(client, 'retry-team')[0]
+    assert second['lease']['number'] == 2
+    client.settle(second)
+    live_doc = client.request(f'/messages/{mid}/compare?a=retry-team&b=ackers')
+    live = live_doc['left']
+    assert live['status'] == 'acked' and live['attempt_count'] == 2
+
+    # 冻结导出仍指向旧时刻：摘要可复算，内容停在第 1 次失败后的等待。
+    assert frozen['observed_at'] == pair['observed_at']
+    assert live_doc['observed_at'] > frozen['observed_at']
+    assert live['tip']['terminal_at'] > frozen['observed_at']
+    assert frozen['by_group']['retry-team']['status'] == 'waiting'
+    assert frozen['by_group']['retry-team']['attempt_count'] == 1
+    assert frozen['sha256'] == frozen_digest
+    checked = client.request('/evidence/verify', frozen)
+    assert checked['valid'] is True and checked['observed_at'] == frozen['observed_at']
+
+    tampered = dict(frozen)
+    tampered['observed_at'] = frozen['observed_at'] + 999
+    assert client.request('/evidence/verify', tampered)['valid'] is False
+
+    later_export = client.request(f'/messages/{mid}/compare/evidence?a=retry-team&b=ackers')
+    assert later_export['observed_at'] > frozen['observed_at']
+    assert later_export['by_group']['retry-team']['status'] == 'acked'
+    return {'message_id': mid, 'frozen_at': frozen['observed_at'],
+            'frozen_sha256': frozen_digest, 'successor_id': redriven['delivery_id']}
+
+
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             redrive=redrive, board=board, retention=retention, export=export, compare=compare,
+             comparison=compare, investigate=compare)
 
 
 def main():
