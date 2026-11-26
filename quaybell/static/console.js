@@ -20,7 +20,113 @@ function selectButton(name, active, action) {
 function resetRetention() {
   state.retention = null;
   $('retention-apply').disabled = true;
+  $('retention-reload').hidden = true;
+  $('retention-panel').replaceChildren();
   $('retention-result').textContent = '';
+}
+
+const SKIP_TEXT = {
+  redriven: '死信已被重投，存在活跃后继分发',
+  active_delivery: '仍有等待或租约中的分发',
+  active_attempt: '仍有未结束的租约尝试',
+  not_due: '复查时尚未到保留截止时刻',
+  not_found: '消息已不存在（可能已被其他清理删除）',
+};
+
+function renderCandidates(reply) {
+  const panel = $('retention-panel');
+  const card = node('div', '', 'plan-card');
+  card.append(node('h4', `当前候选 ${reply.eligible.length} 条 · 观测于 ${clock(reply.observed_at)}`));
+  if (reply.eligible.length) {
+    card.append(node('p', reply.eligible.map(item => `#${item.id}`).join('、'), 'mono'));
+    card.append(node('p', '候选会随时间和处置状态变化；点击“生成批准计划”才会冻结为具体名单。', 'muted'));
+  } else {
+    card.append(node('p', '暂时没有符合清理条件的消息', 'muted'));
+  }
+  panel.replaceChildren(card);
+}
+
+function renderRetentionPlan() {
+  const plan = state.retention?.plan;
+  $('retention-reload').hidden = !plan;
+  $('retention-apply').disabled = !plan || plan.status !== 'prepared';
+  if (!plan) return;
+  const card = node('div', '', `plan-card plan-${plan.status}`);
+  const head = node('div', '', 'dialog-head');
+  head.append(node('h4', `清理计划 #${plan.plan_id}`));
+  let badgeText = '待批准';
+  let badgeState = 'delayed';
+  if (plan.status === 'applied') {
+    const skipCount = (plan.skipped || []).length;
+    const removeCount = (plan.removed || []).length;
+    if (skipCount && removeCount) {
+      badgeText = '部分删除';
+      badgeState = 'delayed';
+    } else if (skipCount && !removeCount) {
+      badgeText = '全部跳过';
+      badgeState = 'dead';
+    } else {
+      badgeText = '已执行';
+      badgeState = 'acked';
+    }
+  }
+  const badge = node('span', badgeText, 'status');
+  badge.dataset.state = badgeState;
+  head.append(badge);
+  card.append(head);
+  const ids = plan.message_ids.length ? plan.message_ids.map(id => `#${id}`).join('、') : '（空名单）';
+  card.append(node('p', `冻结名单 ${plan.message_ids.length} 条：${ids}`, 'mono'));
+  card.append(node('p', `预览时刻 ${clock(plan.observed_at)} · 建计划 ${clock(plan.created_at)}`, 'muted'));
+  if (plan.approved_by) {
+    card.append(node('p', `首位批准人：${plan.approved_by} · 执行于 ${clock(plan.applied_at)}`));
+  }
+  if (plan.approvals?.length) {
+    const text = plan.approvals
+      .map(entry => `${entry.by || '未署名'}${entry.repeated ? '（重复请求）' : ''} ${clock(entry.at)}`)
+      .join('；');
+    card.append(node('p', `批准记录：${text}`, 'muted'));
+  }
+  if (plan.status === 'applied') {
+    const removed = plan.removed || [];
+    const skipped = plan.skipped || [];
+    const outcomeText = {
+      applied: '名单全部删除', partial: '部分删除，其余变化跳过',
+      skipped: '全部因状态变化跳过', empty: '空名单',
+    }[plan.outcome] || '已处理';
+    card.append(node('p', `计划状态：已执行 · ${outcomeText}`, removed.length ? 'removed-line' : 'skip-title'));
+    card.append(node('p',
+      `已删除 ${removed.length} 条：${removed.length ? removed.map(id => `#${id}`).join('、') : '无'}`,
+      removed.length ? 'removed-line' : 'muted'));
+    card.append(node('p', `变化跳过 ${skipped.length} 条：`, skipped.length ? 'skip-title' : 'muted'));
+    if (skipped.length) {
+      const list = node('ul', '', 'skip-list');
+      for (const item of skipped) {
+        const detail = item.delivery_id ? ` · 活跃分发 #${item.delivery_id}` : '';
+        list.append(node('li', `#${item.id} · ${SKIP_TEXT[item.reason] || item.reason}${detail}`));
+      }
+      card.append(list);
+    } else {
+      card.append(node('p', '名单内没有发生变化的条目。', 'muted'));
+    }
+  } else {
+    card.append(node('p', '尚未执行：批准后只删除冻结名单；之后新到期的消息不会连带清理，状态变化的条目会跳过。', 'muted'));
+  }
+  $('retention-panel').replaceChildren(card);
+}
+
+async function syncRetentionPlan() {
+  const holder = state.retention;
+  if (!holder?.plan || holder.plan.status === 'applied') return;
+  try {
+    const plan = await api(`/channels/${holder.channel}/retention/plans/${holder.plan.plan_id}`);
+    if (state.channel !== holder.channel) return;
+    holder.plan = plan;
+    renderRetentionPlan();
+    $('retention-result').textContent =
+      `计划 #${plan.plan_id} 检测到名单状态变化，批准时将跳过受保护条目`;
+  } catch {
+    // 面板上的“刷新计划状态”可手动重试
+  }
 }
 
 async function choose(channel) {
@@ -90,7 +196,7 @@ function render() {
       button('重投', async () => {
         const result = await api(`/deliveries/${item.id}/redrive`, {});
         notice(`重投记录 #${result.delivery_id}`);
-        resetRetention();
+        await syncRetentionPlan();
         await refresh();
       })]), 4, '当前频道没有死信');
   renderLeases();
@@ -200,20 +306,58 @@ $('recover').addEventListener('click', () => run(async () => {
 $('refresh').addEventListener('click', () => run(refresh, $('refresh')));
 $('retention-plan').addEventListener('click', () => run(async () => {
   const channel = state.channel;
+  if (!state.retention || state.retention.channel !== channel) {
+    state.retention = {channel, plan: null};
+  }
   const reply = await api(`${channelPath()}/retention`);
   if (state.channel !== channel) return;
-  state.retention = channel;
+  state.retention.candidates = reply.eligible;
+  renderCandidates(reply);
   $('retention-result').textContent = reply.eligible.length
-    ? `候选 ${reply.eligible.length} 条：${reply.eligible.map(item => `#${item.id}`).join('、')}`
+    ? `候选 ${reply.eligible.length} 条，可继续生成冻结名单计划`
     : '暂时没有符合清理条件的消息';
-  $('retention-apply').disabled = !reply.eligible.length;
 }, $('retention-plan')));
-$('retention-apply').addEventListener('click', () => run(async () => {
-  if (state.retention !== state.channel || !window.confirm('立即重新检查保留条件并清理？')) return;
-  const reply = await api(`${channelPath()}/retention`, {limit: 100});
-  resetRetention();
-  notice(`已清理 ${reply.removed.length} 条消息`);
-  await refresh();
-}));
+$('retention-freeze').addEventListener('click', () => {
+  void run(async () => {
+    const channel = state.channel;
+    const plan = await api(`${channelPath()}/retention/plans`, {limit: 100});
+    if (state.channel !== channel) return;
+    state.retention = {channel, plan};
+    renderRetentionPlan();
+    $('retention-result').textContent =
+      `已冻结计划 #${plan.plan_id}，名单 ${plan.message_ids.length} 条，等待批准`;
+  }, $('retention-freeze')).finally(() => renderRetentionPlan());
+});
+$('retention-reload').addEventListener('click', () => run(async () => {
+  const holder = state.retention;
+  if (!holder?.plan) return;
+  const plan = await api(`/channels/${holder.channel}/retention/plans/${holder.plan.plan_id}`);
+  if (state.channel !== holder.channel) return;
+  holder.plan = plan;
+  renderRetentionPlan();
+}, $('retention-reload')));
+$('retention-apply').addEventListener('click', () => {
+  void run(async () => {
+    const holder = state.retention;
+    const plan = holder?.plan;
+    if (!plan || plan.status !== 'prepared') return;
+    const who = $('retention-approver').value.trim() || 'console-admin';
+    const nameList = plan.message_ids.length ? plan.message_ids.map(id => `#${id}`).join('、') : '空名单';
+    const approved = window.confirm(
+      `确认按清理计划 #${plan.plan_id} 的冻结名单执行？\n`
+      + `名单：${nameList}\n批准人：${who}\n\n`
+      + '预览后新到期的消息不会删除；状态已变化（如死信已重投）的条目会自动跳过。');
+    if (!approved) return;
+    const reply = await api(`${channelPath()}/retention/plans/${plan.plan_id}/apply`,
+      {approved_by: who});
+    holder.plan = reply;
+    const tail = reply.repeated ? '；重复批准/重试，返回首次执行结果' : '';
+    const summary = `计划 #${reply.plan_id}：已删除 ${reply.removed.length} 条，`
+      + `变化跳过 ${reply.skipped.length} 条${tail}`;
+    $('retention-result').textContent = summary;
+    notice(summary);
+    await refresh();
+  }, $('retention-apply')).finally(() => renderRetentionPlan());
+});
 render();
 run(refresh);

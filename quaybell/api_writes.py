@@ -26,4 +26,10 @@ def write(db, action, args, raw, now):
         return Reply(item, 200 if item['repeated'] else 201)
     if action == 'prune':
         return Reply(retention.prune(db, *args, raw, now))
+    if action == 'retention_prepare':
+        return Reply(retention.prepare(db, args[0], raw, now), 201)
+    if action == 'retention_apply':
+        return Reply(retention.apply(db, args[0], int(args[1]), raw, now))
+    if action == 'retention_apply_global':
+        return Reply(retention.apply_any(db, int(args[0]), raw, now))
     raise AssertionError(action)

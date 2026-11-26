@@ -71,6 +71,10 @@
       "command": "python3 -m examples.walkthrough retention"
     },
     {
+      "workflow_id": "approval",
+      "command": "python3 -m examples.walkthrough approval"
+    },
+    {
       "workflow_id": "export",
       "command": "python3 -m examples.walkthrough export"
     }

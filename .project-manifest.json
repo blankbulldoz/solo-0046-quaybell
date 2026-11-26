@@ -406,6 +406,25 @@
       ]
     },
     {
+      "id": "approval",
+      "name": "冻结名单审批、重投保护与并发批准",
+      "entry": "POST /v1/channels/{channel}/retention/plans",
+      "success": "按冻结编号删除并回报已删、变化跳过与计划状态",
+      "failure": "预览后新到期项不连带删除，重投出的活跃分发被保住",
+      "verification": "python3 -m examples.walkthrough approval",
+      "steps": [
+        "创建带编号的冻结名单计划，预览后新到期项不进入计划",
+        "执行时逐条复查，死信刚重投出的活跃后继触发 redriven 跳过",
+        "管理员重试读取同一结果，两人同时批准恰好删除一次并都留痕"
+      ],
+      "module_ids": [
+        "retention",
+        "redrive",
+        "journal",
+        "persistence"
+      ]
+    },
+    {
       "id": "export",
       "name": "导出消息处置证据",
       "entry": "GET /v1/messages/{id}/evidence",

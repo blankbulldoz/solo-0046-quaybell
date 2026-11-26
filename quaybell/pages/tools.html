@@ -41,10 +41,21 @@
     </form>
   </details>
   <details data-needs-channel>
-    <summary>保留复核</summary>
+    <summary>保留复核 · 名单审批</summary>
     <div class="compact">
-      <p class="muted">清理时会重新检查消息年龄和所有关联投递。</p>
-      <div class="button-row"><button type="button" id="retention-plan" class="quiet">查看候选</button><button type="button" id="retention-apply" class="danger" disabled>执行清理</button></div>
+      <p class="muted">先预查候选，再生成带编号的<b>冻结名单计划</b>；审批后只按该计划执行。预查之后才到期的消息不会连带删除；名单中的死信若已重投出活跃分发，会标记为变化并跳过，保住其后继分发。</p>
+      <div class="button-row">
+        <button type="button" id="retention-plan" class="quiet">查看候选</button>
+        <button type="button" id="retention-freeze" class="quiet">生成批准计划</button>
+        <button type="button" id="retention-reload" class="quiet" hidden>刷新计划状态</button>
+      </div>
+      <label class="approver-field">批准人
+        <input name="approved_by" id="retention-approver" value="console-admin" maxlength="60" autocomplete="off">
+      </label>
+      <div class="button-row">
+        <button type="button" id="retention-apply" class="danger" disabled>批准并执行计划</button>
+      </div>
+      <div id="retention-panel" class="retention-panel" aria-live="polite"></div>
       <output class="muted" id="retention-result" aria-live="polite"></output>
     </div>
   </details>

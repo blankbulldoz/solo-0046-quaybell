@@ -115,6 +115,15 @@ td.wrap { white-space: normal; min-width: 115px; overflow-wrap: anywhere; }
 input, textarea { width: 100%; min-width: 0; border: 1px solid #c9d5cb; border-radius: 5px; padding: 6px 7px; color: var(--ink); background: var(--surface); }
 textarea { resize: vertical; font-family: ui-monospace, monospace; }
 output { white-space: pre-wrap; overflow-wrap: anywhere; }
+.retention-panel { display: grid; gap: 8px; }
+.plan-card { display: grid; gap: 6px; padding: 9px 10px; border: 1px solid var(--line); border-left: 3px solid #b98a2f; border-radius: 6px; background: #f9faf7; }
+.plan-card.plan-applied { border-left-color: var(--accent); }
+.plan-card h4 { margin: 0; font-size: .9rem; }
+.plan-card p { margin: 0; }
+.approver-field { max-width: 230px; }
+.removed-line { color: #15583e; font-weight: 600; }
+.skip-title { color: #852620; font-weight: 650; }
+.skip-list { margin: 0; padding-left: 18px; display: grid; gap: 3px; color: #852620; font-size: .85rem; overflow-wrap: anywhere; }
 .leases:empty { display: none; }
 .leases .lease-card { border-top: 1px solid var(--line); padding: 8px 0; margin-top: 8px; }
 .leases .lease-card p { margin-bottom: 6px; }
