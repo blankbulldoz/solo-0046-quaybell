@@ -3,6 +3,9 @@ export const TEXT = {
   ready: '可领取', blocked: '顺序阻挡', delayed: '未到就绪时间', paused: '暂停取件',
   leased: '租约中', expired: '租约超时', acked: '已确认', nacked: '已拒绝',
   waiting: '等待中', dead: '死信', open: '未应答', leased_event: '发放租约',
+  transferred: '已移交', superseded: '租约被接管终止', takeover_completed: '接管完成',
+  takeover_retried: '接管重试', takeover_transferred: '移交投递', takeover_moved: '转移归属',
+  group_paused_for_takeover: '为接管暂停组',
   published: '已发布', redriven: '重投',
 };
 

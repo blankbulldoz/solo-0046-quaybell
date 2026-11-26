@@ -25,6 +25,9 @@ python3 -m quaybell --demo
 | `/channels/{channel}/policy` | POST | 全部四个策略值和预期版号 `expected` |
 | `/channels/{channel}/groups` | POST | `name`、可选匹配 `tags` |
 | `/channels/{channel}/groups/{group}/pause` | POST | `paused` 为布尔值 |
+| `/channels/{channel}/groups/{group}/takeover/preview` | GET | 接管前每项的当前组、状态与是否会转移 |
+| `/channels/{channel}/groups/{group}/takeover` | POST | `new_group`、可选 `takeover_id`；幂等移交未完成项并终止旧租约 |
+| `/channels/{channel}/groups/{group}/takeovers/{id}` | GET | 按接管单号或幂等键读取可对账结果 |
 | `/channels/{channel}/preview` | POST | 用发布信封查询当前标签匹配结果 |
 | `/channels/{channel}/messages` | POST | `producer`、`key`、`lane`、`payload`、可选 `tags`、`delay_seconds` |
 | `/channels/{channel}/groups/{group}/claim` | POST | `worker`、可选 `limit`，返回含 `lease.token` 的领取项 |
@@ -39,6 +42,17 @@ python3 -m quaybell --demo
 
 默认策略是 `lease_seconds=24`、`retry_seconds=3`、`max_attempts=3`、`retention_seconds=3600`。重发原生产键时复用初始匹配结果，内容变化则返回 409。如果应用侧副作用必须去重，应按消息和消费组身份设计处理键。重投需要按其业务语义明确将后继身份识别为有意重新处理。
 
+### 消费组接管
+
+新版本消费者使用新组名时，可调用 `POST /v1/channels/{channel}/groups/{old-group}/takeover`，请求 `{"new_group":"consumer-v2","takeover_id":"rollout-1"}`。接管在一个写事务内完成：
+
+- 旧组中 `waiting`、`leased` 的未完成分发会按原投递 ID 顺序复制到新组，并写入不可重复的 `旧投递 -> 新投递` 对账映射；顺序键保持不变，因此同键后继仍被新组队首挡住。
+- 已 `acked` 的分发只出现在对账结果中并标记为 `acknowledged`，不会在新组重建，因而无需重做。`dead` 项不自动搬运，仍走显式 redrive。
+- 在手旧租约的开放尝试记为 `superseded`，旧投递进入 `transferred`。旧进程晚到的 ack/nack 得到 HTTP 409、`reason="lease_superseded"`，响应和 `details` 带新组与新投递 ID；该确认不会改动新组状态。
+- 同一 `takeover_id` 重试返回同一接管单；不带幂等键时，同源组和目标组的重复 POST 也复用最近接管单。重试不会创建重复分发，`summary.newly_transferred` 表示本次新补移交的条目数，报表会重算目标投递的最新状态。
+
+`takeover` 工作流构造两个顺序键：第一个键有在手租约和后继，第二个键有已确认队首和待领后继；它展示接管前后每项归属、晚到确认的 409、重试结果，以及新组的领取顺序。
+
 以下载荷可发布到示例频道。默认延迟为零。
 
 ```json
@@ -50,6 +64,7 @@ python3 -m quaybell --demo
 ```sh
 python3 -m compileall -q quaybell examples
 python3 -m examples.walkthrough claim
+python3 -m examples.walkthrough takeover
 python3 -m examples.walkthrough retention
 python3 -m examples.walkthrough export
 ```

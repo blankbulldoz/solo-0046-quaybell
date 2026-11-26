@@ -77,6 +77,11 @@
       "responsibility": "由尝试结果计算终态或下一次就绪"
     },
     {
+      "id": "takeover",
+      "path": "quaybell/takeover.py",
+      "responsibility": "消费组接管、旧租约围栏和旧新投递对账"
+    },
+    {
       "id": "deadletters",
       "path": "quaybell/deadletters.py",
       "responsibility": "死信和最后尝试"
@@ -421,6 +426,29 @@
         "evidence",
         "inspection",
         "codec"
+      ]
+    },
+    {
+      "id": "takeover",
+      "name": "消费组新版本接管",
+      "entry": "POST /v1/channels/{channel}/groups/{group}/takeover",
+      "success": "未完成项在新组可领，已确认项不复制，重试不产生重复投递",
+      "failure": "旧租约晚到确认返回 409 lease_superseded",
+      "verification": "python3 -m examples.walkthrough takeover",
+      "steps": [
+        "构造两个顺序键：一键有在手租约和后继，另一键有已确认队首和待领后继",
+        "GET takeover/preview 展示接管前归属",
+        "POST takeover 终止旧租约并复制未完成项，持久化旧到新映射",
+        "用旧凭据晚到确认，验证 409 和新投递定位",
+        "重试同一接管，验证 repeated、映射不变且无重复投递",
+        "在新组按顺序领取，并复查接管后每项归属"
+      ],
+      "module_ids": [
+        "takeover",
+        "claims",
+        "disposition",
+        "delivery",
+        "subscriptions"
       ]
     }
   ],

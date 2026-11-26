@@ -45,8 +45,9 @@ class Session:
     def publish(self, key='signal-1', lane='coil-north', expected=201, **extra):
         return self.request(CHANNEL + '/messages', envelope(key, lane, **extra), expected)
 
-    def claim(self, limit=1, worker='bench-worker'):
-        return self.request(GROUP + '/claim', {'worker': worker, 'limit': limit})['items']
+    def claim(self, limit=1, worker='bench-worker', group='oscillator'):
+        path = GROUP + '/claim' if group == 'oscillator' else CHANNEL + f'/groups/{group}/claim'
+        return self.request(path, {'worker': worker, 'limit': limit})['items']
 
     def settle(self, item, mode='ack', expected=200):
         data = {'token': item['lease']['token']}

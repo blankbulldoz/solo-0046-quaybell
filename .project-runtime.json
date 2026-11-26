@@ -43,6 +43,10 @@
       "command": "python3 -m examples.walkthrough claim"
     },
     {
+      "workflow_id": "takeover",
+      "command": "python3 -m examples.walkthrough takeover"
+    },
+    {
       "workflow_id": "ack",
       "command": "python3 -m examples.walkthrough ack"
     },
