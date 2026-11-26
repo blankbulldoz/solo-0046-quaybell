@@ -8,13 +8,14 @@ Quaybell 是面向内部服务集成的持久消息中间件。应用通过 HTTP
 - 一个消息信封包含生产者、生产键、顺序键、精确匹配标签、载荷和延迟秒数。生产者和生产键相同且信封相同的重复发布复用第一次回执。标签和值精确匹配，空筛选表示全收。创建消费组只影响以后发布的消息。
 - 每个消费组中，一个顺序键上 ID 最小的未处置投递挡住后继。不同顺序键之间独立。领取最多 30 条，选择时按投递 ID 排序。没有常驻回收线程。取件会先扫描本组最多 100 个到期尝试，控制台可另外执行全局有界回收。
 - 暂停只影响之后的取件。租约凭据绑定一次尝试，在到期时刻失效。确认和明确拒绝可重试，相同请求读取已记录结果。客户仍须按业务需要自行去重其外部副作用。
+- 续租是凭据持有者对本人开放且未到期尝试的延期：截止点在当前 `expires` 上顺延，默认步进与预算都按领取时绑定的策略版本确定，之后修订策略不影响旧投递。首次领取给定总预算（请求 `budget_seconds`，否则三倍租约），其绝对上限记录为 `attempts.budget_expires`；任何续租后的截止不得越过它。续租可带 `request_id` 做丢失响应重发，重发读取同一回执且不重复延期。恰好到期的判定沿用 `expires<=now`，续租与回收在 `BEGIN IMMEDIATE` 事务中串行互斥。
 - 明确拒绝的退避以处置时间起算，超时退避以租约截止时间起算。退避从原策略初始值指数增长，最长一小时。尝试数用尽时，投递进入死信。重投追加一条本组投递，绑定当前策略并加入所在顺序键的队尾。每条死信只追加一个直接后继，后继可独立失败。
 - 清理时按消息发布时绑定的保留秒数比较年龄，并检查整条消息的所有派生分发。清理在写事务内重新计算，删除原信封、原回执、尝试和消息级审计。之后原生产键可复用。频道级清理记录保留被删 ID。
 - 租约、公示时间和就绪时间都是 Unix 秒。同步 API 返回 JSON。证据导出绑定一个观察时间和读取快照，去除租约凭据并提供内容摘要。
 
 ## 职责
 
-`catalog`、`policy` 和 `subscriptions` 管辖拓扑与版本；`envelope`、`routing` 和 `publication` 从信封生成分发；`delivery`、`eligibility`、`attempts` 和 `claims` 一起决定谁能领取；`disposition`、`expiry` 和 `outcomes` 确保处置及重试一致；`inspection`、`overview`、`retention` 和 `evidence` 提供查询和保留处置。`persistence` 定义 SQLite 事务边界，接入层负责请求体和响应，控制台使用单页的公开 JSON 接口。
+`catalog`、`policy` 和 `subscriptions` 管辖拓扑与版本；`envelope`、`routing` 和 `publication` 从信封生成分发；`delivery`、`eligibility`、`attempts` 和 `claims` 一起决定谁能领取；`renewal` 在首次领取的总预算内处理凭据续租与重发；`disposition`、`expiry` 和 `outcomes` 确保处置及重试一致；`inspection`、`overview`、`retention` 和 `evidence` 提供查询和保留处置。`persistence` 定义 SQLite 事务边界，接入层负责请求体和响应，控制台使用单页的公开 JSON 接口。
 
 ## 验证边界
 

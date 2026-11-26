@@ -24,6 +24,7 @@
         <label>工作进程<input name="worker" value="console-worker" required></label>
         <label>数量<input name="limit" type="number" min="1" max="30" value="1" required></label>
       </div>
+      <label>总预算秒数（大信号包可续租，留空为三倍租约）<input name="budget_seconds" type="number" min="1" max="604800" placeholder="例如 120"></label>
       <div class="button-row"><button>领取</button><button type="button" id="toggle-group" class="quiet">暂停取件</button></div>
     </form>
     <div class="leases" id="leases"></div>

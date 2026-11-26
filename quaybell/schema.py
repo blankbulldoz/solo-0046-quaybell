@@ -1,4 +1,4 @@
-VERSION = 1
+VERSION = 2
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS channels (
   name TEXT PRIMARY KEY,
@@ -57,11 +57,27 @@ CREATE TABLE IF NOT EXISTS attempts (
   worker TEXT NOT NULL,
   started REAL NOT NULL,
   expires REAL NOT NULL,
+  budget_expires REAL,
+  lease_step REAL,
+  renew_count INTEGER NOT NULL DEFAULT 0,
   outcome TEXT NOT NULL CHECK('open' = outcome OR outcome IN ('acked','nacked','expired')),
   finished REAL,
   reason TEXT,
   receipt TEXT,
   UNIQUE(delivery_id, number)
+);
+CREATE TABLE IF NOT EXISTS lease_renewals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  attempt_id INTEGER NOT NULL REFERENCES attempts(id) ON DELETE CASCADE,
+  number INTEGER NOT NULL,
+  seconds REAL NOT NULL,
+  from_expires REAL NOT NULL,
+  to_expires REAL NOT NULL,
+  at REAL NOT NULL,
+  request_key TEXT,
+  receipt TEXT NOT NULL,
+  UNIQUE(attempt_id, number),
+  UNIQUE(attempt_id, request_key)
 );
 CREATE TABLE IF NOT EXISTS journal (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

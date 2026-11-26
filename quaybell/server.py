@@ -35,7 +35,11 @@ class RelayRequest(BaseHTTPRequestHandler):
         try:
             reply = self.resolve_route(method)
         except RelayError as exc:
-            reply = protocol.Reply({'error': exc.code, 'message': str(exc)}, exc.status)
+            reply_body = {'error': exc.code, 'message': str(exc)}
+            for key, value in getattr(exc, 'details', {}).items():
+                if key not in reply_body:
+                    reply_body[key] = value
+            reply = protocol.Reply(reply_body, exc.status)
         except sqlite3.OperationalError as exc:
             if getattr(exc, 'sqlite_errorcode', 0) & 255 in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
                 reply = protocol.Reply({'error': 'busy', 'message': '中继存储繁忙，请稍后按原身份重试'}, 503)
@@ -71,7 +75,8 @@ class RelayRequest(BaseHTTPRequestHandler):
             with self.server.persistence.session() as db:
                 return api_reads.read(db, action, args, self.server.clock())
         raw = protocol.receive(self)
+        idem_key = self.headers.get('Idempotency-Key')
         with self.server.persistence.session(write=action != 'preview') as db:
             if action == 'preview':
                 return api_reads.check_route(db, args[0], raw)
-            return api_writes.write(db, action, args, raw, self.server.clock())
+            return api_writes.write(db, action, args, raw, self.server.clock(), idem_key)

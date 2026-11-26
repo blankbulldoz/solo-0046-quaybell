@@ -11,7 +11,8 @@ def ready(db, group_id, now, limit):
 
 
 def explain(db, group, now):
-    rows = db.execute('''SELECT d.id,d.message_id,d.lane,d.state,d.ready_at,a.expires
+    rows = db.execute('''SELECT d.id,d.message_id,d.lane,d.state,d.ready_at,a.expires,
+                                a.budget_expires,a.renew_count
                          FROM deliveries d LEFT JOIN attempts a
                            ON a.delivery_id=d.id AND a.outcome='open'
                          WHERE d.subscription_id=? AND d.state IN ('waiting','leased') ORDER BY d.id''',

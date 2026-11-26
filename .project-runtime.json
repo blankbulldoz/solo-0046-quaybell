@@ -43,6 +43,14 @@
       "command": "python3 -m examples.walkthrough claim"
     },
     {
+      "workflow_id": "renew",
+      "command": "python3 -m examples.walkthrough renew"
+    },
+    {
+      "workflow_id": "renew-race",
+      "command": "python3 -m examples.walkthrough renew-race"
+    },
+    {
       "workflow_id": "ack",
       "command": "python3 -m examples.walkthrough ack"
     },

@@ -54,6 +54,21 @@ class Session:
             data['reason'] = '下游拒绝校验帧'
         return self.request(f"/deliveries/{item['delivery_id']}/{mode}", data, expected)
 
+    def renew(self, item, expected=200, path='renew', **extra):
+        data = {'token': item['lease']['token']} | extra
+        return self.request(f"/deliveries/{item['delivery_id']}/{path}", data, expected)
+
+    def raw(self, path, data=None):
+        info = {} if data is None else dict(data=json.dumps(data).encode('utf-8'),
+                                             headers={'Content-Type': 'application/json'})
+        req = Request(self.base + path, **info)
+        try:
+            response = urlopen(req, timeout=8)
+        except HTTPError as exc:
+            response = exc
+        with response:
+            return response.code, json.load(response)
+
 
 def envelope(key='signal-1', lane='coil-north', **extra):
     return dict(producer='signal-source', key=key, lane=lane, payload={'value': 18},

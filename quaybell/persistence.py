@@ -4,6 +4,13 @@ from pathlib import Path
 
 from .schema import SCHEMA, VERSION
 
+# Columns added after version 1, applied idempotently to older database files.
+ATTEMPT_COLUMNS = {
+    'budget_expires': 'REAL',
+    'lease_step': 'REAL',
+    'renew_count': 'INTEGER NOT NULL DEFAULT 0',
+}
+
 
 class RelayPersistence:
     def __init__(self, path):
@@ -11,10 +18,17 @@ class RelayPersistence:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in (0, VERSION):
+            if version > VERSION:
                 raise RuntimeError(f'无法打开存储版本 {version}')
             db.execute('PRAGMA journal_mode=WAL')
-            db.executescript(f'BEGIN IMMEDIATE;\n{SCHEMA}\nPRAGMA user_version={VERSION};\nCOMMIT;')
+            db.executescript(SCHEMA)
+            present = {row[1] for row in db.execute('PRAGMA table_info(attempts)')}
+            additions = [f'ALTER TABLE attempts ADD COLUMN {name} {decl}'
+                         for name, decl in ATTEMPT_COLUMNS.items() if name not in present]
+            if additions or version != VERSION:
+                db.executescript('BEGIN IMMEDIATE;\n' + ';\n'.join(additions)
+                                 + (';\n' if additions else '')
+                                 + f'PRAGMA user_version={VERSION};\nCOMMIT;')
 
     @contextmanager
     def _connection(self):

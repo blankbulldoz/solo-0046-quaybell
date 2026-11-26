@@ -1,7 +1,8 @@
 class RelayError(Exception):
-    def __init__(self, status, code, message):
+    def __init__(self, status, code, message, details=None):
         super().__init__(message)
         self.status, self.code = status, code
+        self.details = details or {}
 
 
 def invalid(message):

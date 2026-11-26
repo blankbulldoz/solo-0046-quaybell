@@ -3,16 +3,22 @@ import secrets
 from . import codec
 from .errors import conflict
 
-PUBLIC = 'id,delivery_id,number,worker,started,expires,outcome,finished,reason'
+PUBLIC = 'id,delivery_id,number,worker,started,expires,budget_expires,renew_count,outcome,finished,reason'
 
 
-def open_attempt(db, delivery, worker, now, seconds):
+def open_attempt(db, delivery, worker, now, seconds, budget_expires=None, step_seconds=None):
     token = secrets.token_urlsafe(24)
     number = delivery['attempt_count'] + 1
-    key = db.execute('''INSERT INTO attempts(delivery_id,number,token_digest,worker,started,expires,outcome)
-                        VALUES (?,?,?,?,?,?,'open')''',
-                     (delivery['id'], number, codec.fingerprint(token), worker, now, now + seconds)).lastrowid
-    return dict(id=key, token=token, number=number, expires=now + seconds)
+    if budget_expires is None:
+        budget_expires = now + seconds * 3  # two default renewals when caller sets no budget
+    step_seconds = seconds if step_seconds is None else step_seconds
+    key = db.execute('''INSERT INTO attempts(delivery_id,number,token_digest,worker,started,expires,
+                                             budget_expires,lease_step,renew_count,outcome)
+                        VALUES (?,?,?,?,?,?,?,?,0,'open')''',
+                     (delivery['id'], number, codec.fingerprint(token), worker, now, now + seconds,
+                      budget_expires, step_seconds)).lastrowid
+    return dict(id=key, token=token, number=number, expires=now + seconds,
+                budget_expires=budget_expires, renew_count=0)
 
 
 def by_token(db, delivery_id, token):
@@ -39,5 +45,10 @@ def finish(db, attempt, outcome, reason, now, receipt):
 
 
 def for_delivery(db, key):
-    return [dict(row) for row in db.execute(
-        f'SELECT {PUBLIC} FROM attempts WHERE delivery_id=? ORDER BY number', (key,))]
+    rows = db.execute(f'SELECT {PUBLIC} FROM attempts WHERE delivery_id=? ORDER BY number', (key,))
+    result = []
+    for row in rows:
+        item = dict(row)
+        item['renewals'] = item.get('renew_count', 0)
+        result.append(item)
+    return result

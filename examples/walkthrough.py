@@ -1,6 +1,7 @@
 """Run one bounded middleware workflow through the public HTTP listener."""
 import argparse
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 from quaybell.codec import fingerprint, pack
 
@@ -207,9 +208,157 @@ def export(client):
     return {'format': record['format'], 'sha256': digest}
 
 
+def renew(client):
+    client.channel()
+    client.subscribe()
+    origin = client.clock[0]
+
+    # --- 大信号包：连续续租两次，丢失响应后按原请求重发 ---------------------
+    big = client.publish('big-signal', 'lane-big')
+    item = client.claim()[0]
+    path = f"/deliveries/{item['delivery_id']}/renew"
+    assert item['lease']['expires'] == origin + 4
+    assert item['lease']['budget_expires'] == origin + 12  # 首次领取确定的总预算
+
+    first = client.renew(item, request_id='renew-1')
+    assert (first['expires'], first['renewals']) == (origin + 8, 1)
+    assert client.renew(item, request_id='renew-1') == first | {'repeated': True}
+
+    second = client.renew(item, request_id='renew-2')
+    assert (second['expires'], second['renewals'], second['remaining_seconds']) == (origin + 12, 2, 0)
+    assert client.renew(item, request_id='renew-2') == second | {'repeated': True}
+    # 不带请求标识的原样重发，在预算边界上也返回已记录的续租回执。
+    assert client.renew(item) == second | {'repeated': True}
+    # 换一个新的续租请求仍受总预算硬约束。
+    over = client.renew(item, request_id='renew-3', expected=409)
+    assert over['error'] == 'conflict' and over['reason_code'] == 'lease_budget_exceeded'
+    assert over['budget_expires'] == origin + 12
+    # 别人的凭据不能续我的租约。
+    client.request(path, {'token': 'stale-lease'}, 409)
+    # 现有短任务仍按原节奏确认，确认响应丢失后重发读到同一回执。
+    acked = client.settle(item)
+    assert client.settle(item) == acked | {'repeated': True}
+
+    # --- 续租后修订策略：旧投递沿用旧策略，同键后继保持阻挡并可解释 ----------
+    head_msg = client.publish('policy-head', 'lane-order')
+    tail_msg = client.publish('policy-tail', 'lane-order')
+    client.publish('policy-aside', 'lane-other')
+    claimed = {row['message_id']: row for row in client.claim(10)}
+    head = claimed[head_msg['message_id']]
+    assert tail_msg['message_id'] not in claimed  # 同键后继被队首挡住
+
+    renewed = client.renew(head)
+    assert renewed['expires'] == origin + 8
+    revised = client.request(CHANNEL + '/policy', POLICY | {'expected': 1, 'lease_seconds': 12}, 201)
+    assert revised['version'] == 2
+    renewed_again = client.renew(head)  # 旧投递仍按旧版 4 秒步进，而不是新版 12 秒
+    assert renewed_again['expires'] == origin + 12
+
+    new_policy_msg = client.publish('new-policy', 'lane-fresh')
+    fresh = next(row for row in client.claim(10) if row['message_id'] == new_policy_msg['message_id'])
+    assert fresh['lease']['expires'] == origin + 12 and fresh['lease']['budget_expires'] == origin + 36
+    client.settle(fresh)
+
+    board = client.request(CHANNEL)
+    group_view = next(row for row in board['groups'] if row['name'] == 'oscillator')
+    causes = {row['message_id']: row['cause'] for row in group_view['sample']}
+    assert causes[head_msg['message_id']] == 'leased'
+    assert causes[tail_msg['message_id']] == 'blocked'
+
+    client.tick(12)  # 恰好到两次续租后的截止时刻 origin+12
+    board = client.request(CHANNEL)
+    group_view = next(row for row in board['groups'] if row['name'] == 'oscillator')
+    causes = {row['message_id']: row['cause'] for row in group_view['sample']}
+    assert causes[head_msg['message_id']] == 'expired'
+    assert causes[tail_msg['message_id']] == 'blocked'  # 到期未回收前队首仍挡住后继
+
+    swept = client.request('/sweep', {'limit': 100})
+    head_recovery = next(row for row in swept['recovered'] if row['delivery_id'] == head['delivery_id'])
+    assert head_recovery['effective_at'] == renewed_again['expires'] + 3  # 从续租后的截止起算
+    board = client.request(CHANNEL)
+    group_view = next(row for row in board['groups'] if row['name'] == 'oscillator')
+    causes = {row['message_id']: row['cause'] for row in group_view['sample']}
+    assert causes[head_msg['message_id']] == 'delayed'
+    assert causes[tail_msg['message_id']] == 'blocked'
+
+    client.tick(3)
+    retried = {row['message_id']: row for row in client.claim(10)}
+    head_attempt = retried[head_msg['message_id']]
+    assert head_attempt['lease']['number'] == 2 and head_attempt['policy'] == 1
+    client.settle(head_attempt)
+    tail = client.claim()[0]
+    assert tail['message_id'] == tail_msg['message_id'] and tail['policy'] == 1
+    client.settle(tail)
+    for row in retried.values():  # 独立键上的并行重试投递一并确认收尾
+        if row['delivery_id'] != head_attempt['delivery_id']:
+            client.settle(row)
+
+    # --- 租约刚到期：顺序视角下续租 409，回收按原截止入账 -------------------
+    edge = client.publish('edge-signal', 'lane-edge')  # 修订后发布，绑定 12 秒新租约
+    edge_item = client.claim()[0]
+    edge_expires = edge_item['lease']['expires']
+    client.tick(12)
+    assert client.clock[0] == edge_expires
+    assert client.renew(edge_item, expected=409)['error'] == 'conflict'
+    edge_sweep = client.request('/sweep', {'limit': 100})
+    edge_recovery = next(row for row in edge_sweep['recovered']
+                         if row['delivery_id'] == edge_item['delivery_id'])
+    assert edge_recovery['effective_at'] == edge_expires + 3
+    client.settle(edge_item, expected=409)  # 旧凭据随回收失效
+    client.tick(3)
+    edge_retry = client.claim()[0]
+    assert edge_retry['lease']['number'] == 2
+    client.settle(edge_retry)
+
+    trace = client.request(f"/messages/{big['message_id']}")
+    attempt = trace['deliveries'][0]['attempts'][0]
+    assert attempt['renew_count'] == 2 and attempt['renewals'] == 2
+    assert len(attempt['renewal_history']) == 2
+    assert [event['kind'] for event in trace['events']].count('renewed') == 2
+    assert item['lease']['token'] not in pack(trace)
+    return {'renewals': 2, 'budget_expires': origin + 12,
+            'head_retry_at': head_recovery['effective_at'], 'edge_retry_at': edge_recovery['effective_at']}
+
+
+def renew_race(client):
+    """Concurrent renew/sweep at the exact deadline must have one winner."""
+    client.channel()
+    client.subscribe()
+    client.publish('race-signal', 'lane-race')
+    item = client.claim()[0]
+    delivery = item['delivery_id']
+    client.tick(4)  # 精确停在 expires 时刻：按既有约定此刻租约已到期
+    parties = 6
+    barrier = __import__('threading').Barrier(parties)
+
+    def renew_one(index):
+        barrier.wait()
+        return client.raw(f'/deliveries/{delivery}/renew',
+                          {'token': item['lease']['token'], 'request_id': f'race-{index}'})
+
+    def sweep_one(index):
+        barrier.wait()
+        return client.raw('/sweep', {'limit': 10})
+
+    with ThreadPoolExecutor(parties) as pool:
+        futures = [pool.submit(renew_one, i) for i in range(4)]
+        futures += [pool.submit(sweep_one, i) for i in range(2)]
+        results = [future.result(timeout=20) for future in futures]
+    renew_results = results[:4]
+    sweep_results = results[4:]
+    assert all(code == 409 for code, _ in renew_results), renew_results
+    assert all(code == 200 for code, _ in sweep_results), sweep_results
+    recovered = sum(len(body.get('recovered', [])) for _, body in sweep_results)
+    assert recovered == 1, recovered
+    trace = client.request(f"/messages/{item['message_id']}")
+    assert trace['deliveries'][0]['attempts'][0]['outcome'] == 'expired'
+    return {'renew_conflicts': 4, 'recovered_once': recovered}
+
+
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             redrive=redrive, board=board, retention=retention, export=export,
+             renew=renew, **{'renew-race': renew_race})
 
 
 def main():

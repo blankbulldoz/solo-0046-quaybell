@@ -1,8 +1,8 @@
-from . import catalog, claims, disposition, expiry, inputs, publication, redrive, retention, subscriptions
+from . import catalog, claims, disposition, expiry, inputs, publication, redrive, renewal, retention, subscriptions
 from .protocol import Reply
 
 
-def write(db, action, args, raw, now):
+def write(db, action, args, raw, now, idem_key=None):
     if action == 'create_channel':
         return Reply(catalog.create(db, raw, now), 201)
     if action == 'revision':
@@ -18,6 +18,8 @@ def write(db, action, args, raw, now):
         return Reply(claims.claim(db, *args, raw, now))
     if action in ('ack', 'nack'):
         return Reply(disposition.settle(db, int(args[0]), raw, now, action + 'ed'))
+    if action == 'renew':
+        return Reply(renewal.extend(db, int(args[0]), raw, now, header_key=idem_key))
     if action == 'sweep':
         return Reply(expiry.sweep(db, raw, now))
     if action == 'redrive':

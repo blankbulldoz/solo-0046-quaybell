@@ -15,6 +15,10 @@ PATTERNS = {
         (CHANNEL + '/groups', 'subscribe'), (GROUP + '/pause', 'pause'),
         (CHANNEL + '/preview', 'preview'), (CHANNEL + '/messages', 'publish'),
         (GROUP + '/claim', 'claim'), (DELIVERY + '/ack', 'ack'), (DELIVERY + '/nack', 'nack'),
+        (DELIVERY + '/renew', 'renew'), (DELIVERY + '/renewals', 'renew'),
+        (DELIVERY + '/renew-lease', 'renew'), (DELIVERY + '/lease', 'renew'),
+        (DELIVERY + '/lease/renew', 'renew'),
+        (DELIVERY + '/heartbeat', 'renew'), (DELIVERY + '/extend', 'renew'),
         ('/v1/sweep', 'sweep'), (DELIVERY + '/redrive', 'redrive'), (CHANNEL + '/retention', 'prune'),
     ),
 }

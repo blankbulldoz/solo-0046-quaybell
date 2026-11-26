@@ -52,6 +52,11 @@
       "responsibility": "按组取件和发放租约"
     },
     {
+      "id": "renewal",
+      "path": "quaybell/renewal.py",
+      "responsibility": "在首次领取确定的总预算内续租、续租幂等重发和预算上限"
+    },
+    {
       "id": "eligibility",
       "path": "quaybell/eligibility.py",
       "responsibility": "同键队首和原因分类"
@@ -270,6 +275,29 @@
         "expiry",
         "policy",
         "attempts"
+      ]
+    },
+    {
+      "id": "renew",
+      "name": "在总预算内续租并支持丢失响应重发",
+      "entry": "POST /v1/deliveries/{id}/renew",
+      "success": "本人有效租约可顺延，重发同一续租请求读到 repeated 原回执",
+      "failure": "他人凭据、恰好到期或越过首次领取总预算均返回 409",
+      "verification": "python3 -m examples.walkthrough renew",
+      "steps": [
+        "领取时确定 budget_expires 总预算上限",
+        "连续两次续租按绑定策略步进顺延且不越过预算",
+        "相同 request_id 或预算边界上的原样重发返回同一回执",
+        "恰好到期时续租 409 而回收按续租后截止时间计算重试",
+        "修订策略后旧投递沿用旧版步进，同键后继保持 blocked 直到队首推进"
+      ],
+      "module_ids": [
+        "renewal",
+        "claims",
+        "attempts",
+        "expiry",
+        "outcomes",
+        "eligibility"
       ]
     },
     {

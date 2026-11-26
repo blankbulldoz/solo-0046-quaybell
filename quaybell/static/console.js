@@ -113,10 +113,24 @@ function renderLeases() {
       notice(`投递 #${item.delivery_id}：${TEXT[result.state]}`);
       await refresh();
     };
-    actions.append(button('确认', settle('ack')), button('拒绝', settle('nack'), {className: 'danger'}),
+    const renewLease = async () => {
+      const result = await api(`/deliveries/${item.delivery_id}/renew`, {token: item.lease.token});
+      item.lease.expires = result.expires;
+      item.lease.budget_expires = result.budget_expires;
+      item.lease.renewals = result.renewals;
+      notice(result.repeated
+        ? `投递 #${item.delivery_id}：读到已记录的续租回执`
+        : `投递 #${item.delivery_id}：已续租至 ${clock(result.expires)}`);
+      await refresh();
+    };
+    actions.append(button('续租', renewLease),
+      button('确认', settle('ack')), button('拒绝', settle('nack'), {className: 'danger'}),
       button('移除卡片', () => { state.leases.delete(item.delivery_id); renderLeases(); }));
+    const budget = item.lease.budget_expires
+      ? ` · 总预算截止 ${clock(item.lease.budget_expires)}` : '';
     card.append(node('p', `投递 #${item.delivery_id} · 第 ${item.lease.number} 次`, 'mono'),
-      node('p', `租约截止 ${clock(item.lease.expires)}`, 'muted'), reason, actions);
+      node('p', `租约截止 ${clock(item.lease.expires)} · 已续租 ${item.lease.renewals ?? item.lease.renew_count ?? 0} 次${budget}`, 'muted'),
+      reason, actions);
     return card;
   }));
 }
@@ -171,10 +185,12 @@ onForm('publish', async (values, mode) => {
     : `消息 #${reply.message_id} · ${reply.repeated ? '已复用原回执' : '已发布'} · ${Object.keys(reply.fanout).length} 个消费组`;
   if (mode !== 'preview') await refresh();
 });
-onForm('claim', async ({worker, limit}) => {
+onForm('claim', async ({worker, limit, budget_seconds}) => {
   if (!group()) return;
   const channel = state.channel, selected = state.group;
-  const reply = await api(`${groupPath()}/claim`, {worker, limit: Number(limit)});
+  const payload = {worker, limit: Number(limit)};
+  if (budget_seconds) payload.budget_seconds = Number(budget_seconds);
+  const reply = await api(`${groupPath()}/claim`, payload);
   for (const item of reply.items) state.leases.set(item.delivery_id, {...item, channel, group: selected});
   notice(reply.paused ? '消费组已暂停' : `领取 ${reply.items.length} 条`);
   await refresh();
