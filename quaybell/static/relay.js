@@ -4,6 +4,8 @@ export const TEXT = {
   leased: '租约中', expired: '租约超时', acked: '已确认', nacked: '已拒绝',
   waiting: '等待中', dead: '死信', open: '未应答', leased_event: '发放租约',
   published: '已发布', redriven: '重投',
+  direct: '直接', bridged: '桥接', bridged_event: '已桥接', bridge_received: '桥接收入',
+  bridge_configured: '桥接建立', bridge_revised: '桥接换版',
 };
 
 export async function api(path, data) {

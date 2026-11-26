@@ -22,4 +22,25 @@
       </form>
     </details>
   </div>
+  <div class="rail-section">
+    <h2>频道桥接</h2>
+    <div id="bridges" class="group-list"></div>
+    <details data-needs-channel>
+      <summary>建立桥接</summary>
+      <form id="create-bridge" class="compact">
+        <label>桥接名<input name="name" required maxlength="48" pattern="[a-z][a-z0-9-]*" placeholder="span"></label>
+        <label>目标频道<input name="target" required maxlength="48" pattern="[a-z][a-z0-9-]*" placeholder="relay-basin"></label>
+        <label>匹配标签<textarea name="tags" rows="2" placeholder='{"feed":"telemetry"}'>{}</textarea></label>
+        <button>建立</button>
+      </form>
+    </details>
+    <details data-needs-channel id="revise-bridge-box" hidden>
+      <summary>桥接换版 <span id="revise-bridge-name" class="muted"></span></summary>
+      <form id="revise-bridge" class="compact">
+        <label>目标频道<input name="target" required maxlength="48" pattern="[a-z][a-z0-9-]*"></label>
+        <label>匹配标签<textarea name="tags" rows="2"></textarea></label>
+        <button>提交新版</button>
+      </form>
+    </details>
+  </div>
 </aside>

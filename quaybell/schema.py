@@ -1,4 +1,4 @@
-VERSION = 1
+VERSION = 2
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS channels (
   name TEXT PRIMARY KEY,
@@ -23,6 +23,16 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   created REAL NOT NULL,
   UNIQUE(channel, name)
 );
+CREATE TABLE IF NOT EXISTS bridges (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_channel TEXT NOT NULL REFERENCES channels(name),
+  name TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  target_channel TEXT NOT NULL REFERENCES channels(name),
+  tags TEXT NOT NULL,
+  created REAL NOT NULL,
+  UNIQUE(source_channel, name, version)
+);
 CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   channel TEXT NOT NULL,
@@ -32,10 +42,23 @@ CREATE TABLE IF NOT EXISTS messages (
   envelope TEXT NOT NULL,
   fingerprint TEXT NOT NULL,
   policy INTEGER NOT NULL,
+  origin TEXT NOT NULL CHECK(origin IN ('direct','bridged')),
   published REAL NOT NULL,
   available REAL NOT NULL,
-  FOREIGN KEY(channel, policy) REFERENCES policies(channel, version),
-  UNIQUE(channel, producer, dedup_key)
+  FOREIGN KEY(channel, policy) REFERENCES policies(channel, version)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS direct_message_key ON messages(channel,producer,dedup_key)
+  WHERE origin='direct';
+CREATE TABLE IF NOT EXISTS bridge_links (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  bridge_id INTEGER NOT NULL REFERENCES bridges(id),
+  source_channel TEXT NOT NULL,
+  target_channel TEXT NOT NULL,
+  source_message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  target_message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
+  bridge_version INTEGER NOT NULL,
+  at REAL NOT NULL,
+  UNIQUE(bridge_id, source_message_id)
 );
 CREATE TABLE IF NOT EXISTS deliveries (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,6 +94,8 @@ CREATE TABLE IF NOT EXISTS journal (
   kind TEXT NOT NULL,
   details TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS bridge_source ON bridge_links(source_message_id,id);
+CREATE INDEX IF NOT EXISTS bridge_target ON bridge_links(target_message_id,id);
 CREATE INDEX IF NOT EXISTS delivery_lane ON deliveries(subscription_id,lane,id)
   WHERE state IN ('waiting','leased');
 CREATE INDEX IF NOT EXISTS delivery_origin ON deliveries(message_id,id);
@@ -78,4 +103,30 @@ CREATE INDEX IF NOT EXISTS attempt_deadline ON attempts(expires,id) WHERE outcom
 CREATE UNIQUE INDEX IF NOT EXISTS one_open_attempt ON attempts(delivery_id) WHERE outcome='open';
 CREATE INDEX IF NOT EXISTS message_channel ON messages(channel,published,id);
 CREATE INDEX IF NOT EXISTS journal_message ON journal(message_id,id);
+'''
+
+# 从无桥接的第一版结构升级：消息唯一约束改为仅限直接发布，并迁入桥接相关表。
+MIGRATE_1_TO_2 = '''
+PRAGMA foreign_keys=OFF;
+CREATE TABLE messages_new (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  channel TEXT NOT NULL,
+  producer TEXT NOT NULL,
+  dedup_key TEXT NOT NULL,
+  lane TEXT NOT NULL,
+  envelope TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  policy INTEGER NOT NULL,
+  origin TEXT NOT NULL CHECK(origin IN ('direct','bridged')),
+  published REAL NOT NULL,
+  available REAL NOT NULL,
+  FOREIGN KEY(channel, policy) REFERENCES policies(channel, version)
+);
+INSERT INTO messages_new(id,channel,producer,dedup_key,lane,envelope,fingerprint,policy,origin,published,available)
+  SELECT id,channel,producer,dedup_key,lane,envelope,fingerprint,policy,'direct',published,available FROM messages;
+DROP TABLE messages;
+ALTER TABLE messages_new RENAME TO messages;
+CREATE UNIQUE INDEX IF NOT EXISTS direct_message_key ON messages(channel,producer,dedup_key)
+  WHERE origin='direct';
+PRAGMA foreign_key_check;
 '''

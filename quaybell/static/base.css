@@ -65,6 +65,11 @@ h3 { font-size: .93rem; margin: 16px 0 7px; }
 .rail { padding-top: 12px; min-width: 0; }
 .rail-section + .rail-section { margin-top: 22px; border-top: 1px solid var(--line); padding-top: 16px; }
 .channel-list, .group-list { display: grid; gap: 4px; }
+.bridge-card { padding: 7px 8px; border: 1px solid var(--line); border-radius: 6px; background: #f9faf7; }
+.bridge-card p { margin-bottom: 5px; }
+.bridge-card .quiet { padding: 3px 8px; font-size: .8rem; }
+.status[data-state="direct"] { color: #225382; background: #e9f0f8; }
+.status[data-state="bridged"] { color: #15583e; background: #e4f2e9; }
 .rail button.selector {
   width: 100%;
   padding: 8px 6px;

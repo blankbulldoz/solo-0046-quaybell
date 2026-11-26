@@ -42,6 +42,8 @@ class RelayRequest(BaseHTTPRequestHandler):
             else:
                 LOG.exception('存储操作失败')
                 reply = protocol.Reply({'error': 'internal', 'message': '存储操作失败'}, 500)
+        except sqlite3.IntegrityError:
+            reply = protocol.Reply({'error': 'conflict', 'message': '写入与既有记录冲突'}, 409)
         except TimeoutError:
             reply = protocol.Reply({'error': 'timeout', 'message': '读取请求超时'}, 408)
         body = reply.body()

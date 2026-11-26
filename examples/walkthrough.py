@@ -207,9 +207,105 @@ def export(client):
     return {'format': record['format'], 'sha256': digest}
 
 
+def bridge(client):
+    src = '/channels/signal-weir'
+    dst = '/channels/relay-basin'
+    # 两个频道各自建立，目标频道有自己的策略与订阅。
+    client.request('/channels', {'name': 'signal-weir', 'policy': POLICY}, 201)
+    client.request('/channels', {'name': 'relay-basin',
+                                 'policy': POLICY | {'lease_seconds': 7}}, 201)
+    client.request(src + '/groups', {'name': 'weir-rotor', 'tags': {}}, 201)
+    client.request(dst + '/groups', {'name': 'basin-keeper', 'tags': {'feed': 'telemetry'}}, 201)
+    # 桥接只在标签精确匹配时转发，空标签组仍按目标订阅过滤。
+    rule = client.request(src + '/bridges',
+                          {'name': 'span', 'target': 'relay-basin', 'tags': {'feed': 'telemetry'}}, 201)
+    assert rule['version'] == 1 and rule['target_channel'] == 'relay-basin'
+    client.request(src + '/bridges',
+                   {'name': 'span', 'target': 'relay-basin', 'tags': {'feed': 'telemetry'}}, 409)
+    client.request(src + '/bridges',
+                   {'name': 'bad-span', 'target': 'missing-channel', 'tags': {}}, 404)
+
+    # 预查只读：标签不匹配不会产生任何转发，且不写入消息。
+    miss_env = envelope('skip', 'coil-south', tags={'feed': 'alerts'})
+    miss_preview = client.request(src + '/preview', miss_env)
+    assert miss_preview['bridges'] == [{'bridge': 'span', 'version': 1,
+                                        'target': 'relay-basin', 'match': False}]
+    miss = client.request(src + '/messages', miss_env, 201)
+    assert miss['bridges'] == [] and miss['origin'] == 'direct'
+    assert client.request(dst)['messages'] == []
+
+    # 匹配发布：源回执在同一事务内确认目标已持久化，并给出目标分发。
+    hit_env = envelope('pulse-9', 'coil-north', tags={'feed': 'telemetry'})
+    hit_preview = client.request(src + '/preview', hit_env)
+    assert hit_preview['bridges'][0]['match'] is True
+    first = client.request(src + '/messages', hit_env, 201)
+    target_id = first['bridges'][0]['target_message_id']
+    assert {k: first['bridges'][0][k] for k in ('bridge', 'version', 'target', 'target_message_id')} == \
+        {'bridge': 'span', 'version': 1, 'target': 'relay-basin', 'target_message_id': target_id}
+    target_delivery_id = first['bridges'][0]['target_fanout']['basin-keeper']
+    assert isinstance(target_delivery_id, int)
+    assert list(first['fanout']) == ['weir-rotor']
+    target = client.request(f'/messages/{target_id}')
+    assert target['message']['origin'] == 'bridged'
+    assert target['incoming'][0] == {'bridge': 'span', 'version': 1,
+                                     'source_channel': 'signal-weir',
+                                     'source_message_id': first['message_id']}
+    # 目标频道按自己的订阅和策略分发。
+    target_delivery = client.request(dst + '/groups/basin-keeper/claim', {'worker': 'basin-worker'})
+    assert target_delivery['items'][0]['message_id'] == target_id
+    assert target_delivery['items'][0]['delivery_id'] == target_delivery_id
+    # 目标频道策略租约 7 秒（源频道为 4 秒），由受控时钟确认。
+    assert target_delivery['items'][0]['lease']['expires'] == client.clock[0] + 7
+
+    # 目标频道同生产者同键的直接发布与桥接消息并存，谁也不会被误认。
+    direct = client.request(dst + '/messages',
+                            dict(producer='signal-source', key='pulse-9', lane='coil-north',
+                                 tags={'feed': 'telemetry'}, payload={'value': 18}), 201)
+    assert direct['origin'] == 'direct' and direct['message_id'] != target_id
+    board = client.request(dst)
+    origins = {row['id']: row['origin'] for row in board['messages']}
+    assert origins[target_id] == 'bridged' and origins[direct['message_id']] == 'direct'
+
+    # 源回执丢失后按原身份重发：复用原回执，不再产生新的桥接转发。
+    before = len(client.request(dst)['messages'])
+    resent = client.request(src + '/messages', hit_env, 200)
+    assert resent == first | {'repeated': True}
+    after = client.request(dst)['messages']
+    assert len(after) == before
+    assert client.request(f"/messages/{first['message_id']}")['bridges'] == first['bridges']
+
+    # 桥接配置换版：旧回执仍定位第一版当时的目标结果，新发布按新版另建链接。
+    revised = client.request(src + '/bridges/span',
+                             {'target': 'relay-basin', 'tags': {'feed': 'samples', 'kind': 'span'},
+                              'expected': 1}, 201)
+    assert revised['version'] == 2
+    client.request(src + '/bridges/span',
+                   {'target': 'relay-basin', 'tags': {'feed': 'samples'}, 'expected': 1}, 409)
+    old_trace = client.request(f"/messages/{first['message_id']}")
+    assert {k: old_trace['bridges'][0][k] for k in ('bridge', 'version', 'target', 'target_message_id')} == \
+        {'bridge': 'span', 'version': 1, 'target': 'relay-basin', 'target_message_id': target_id}
+    next_env = envelope('pulse-10', 'coil-north', tags={'feed': 'samples', 'kind': 'span'})
+    new_hit = client.request(src + '/messages', next_env, 201)
+    assert new_hit['bridges'][0]['version'] == 2
+    assert new_hit['bridges'][0]['target_message_id'] != target_id
+    new_target = client.request(f"/messages/{new_hit['bridges'][0]['target_message_id']}")
+    assert new_target['incoming'][0]['version'] == 2
+    # 换版后不满足新条件的发布不会被转发。
+    dropped = client.request(src + '/messages', envelope('pulse-11', 'coil-south'), 201)
+    assert dropped['bridges'] == []
+    # 证据导出与轨迹一致，桥接结果随源消息一起冻结。
+    evidence_record = client.request(f"/messages/{first['message_id']}/evidence")
+    assert evidence_record['trace']['bridges'] == old_trace['bridges']
+    return {'first_target': target_id,
+            'resent_targets': [row['target_message_id'] for row in resent['bridges']],
+            'old_receipt_version': old_trace['bridges'][0]['version'],
+            'new_receipt_version': new_hit['bridges'][0]['version'],
+            'new_target': new_hit['bridges'][0]['target_message_id']}
+
+
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             redrive=redrive, board=board, retention=retention, export=export, bridge=bridge)
 
 
 def main():

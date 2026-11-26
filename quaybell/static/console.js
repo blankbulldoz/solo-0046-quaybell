@@ -60,6 +60,7 @@ function render() {
       state.group = item.name;
       render();
     })) : [node('p', '暂无消费组', 'muted')]));
+  renderBridges(board);
   $('claim').querySelector('button').disabled = !selected || selected.paused;
   $('toggle-group').disabled = !selected;
   $('toggle-group').textContent = selected?.paused ? '恢复取件' : '暂停取件';
@@ -82,7 +83,7 @@ function render() {
   const messages = board?.messages || [];
   $('message-total').textContent = messages.length ? `最近 ${messages.length} 条` : '';
   rows('message-rows', messages.map(item => [traceLink(item.id), item.producer, item.dedup_key,
-    `v${item.policy}`, clock(item.published)]), 5, '当前频道没有消息');
+    status(item.origin), `v${item.policy}`, clock(item.published)]), 6, '当前频道没有消息');
   const dead = board?.dead || [];
   $('dead-total').textContent = dead.length ? `最近 ${dead.length} 条` : '';
   rows('dead-rows', dead.map(item => [traceLink(item.message_id, `#${item.id}`), item.group_name,
@@ -94,6 +95,28 @@ function render() {
         await refresh();
       })]), 4, '当前频道没有死信');
   renderLeases();
+}
+
+function renderBridges(board) {
+  const items = board?.bridges || [];
+  $('bridges').replaceChildren(...(items.length ? items.map(rule => {
+    const card = node('div', '', 'bridge-card');
+    const title = node('p', `#${rule.name} · v${rule.version} · → ${rule.target_channel}`, 'mono');
+    const tag = node('p', JSON.stringify(rule.tags), 'muted');
+    const edit = button('换版', () => {
+      const box = $('revise-bridge-box');
+      $('revise-bridge-name').textContent = `#${rule.name}（当前 v${rule.version}）`;
+      const form = $('revise-bridge');
+      form.elements.target.value = rule.target_channel;
+      form.elements.tags.value = JSON.stringify(rule.tags);
+      form.dataset.bridge = rule.name;
+      form.dataset.expected = rule.version;
+      box.hidden = false;
+      box.open = true;
+    }, {className: 'quiet'});
+    card.append(title, tag, edit);
+    return card;
+  }) : [node('p', '暂无桥接', 'muted')]));
 }
 
 function renderLeases() {
@@ -125,7 +148,7 @@ async function trace(id) {
   const facts = await api(`/messages/${id}`);
   $('trace-title').textContent = `消息 #${id}`;
   const m = facts.message;
-  $('trace-meta').textContent = `${m.channel} · ${m.producer}/${m.dedup_key} · v${m.policy} · ${clock(m.published)}`;
+  $('trace-meta').textContent = `${m.channel} · ${m.producer}/${m.dedup_key} · ${TEXT[m.origin]} · v${m.policy} · ${clock(m.published)}`;
   $('trace-envelope').textContent = JSON.stringify(m.envelope, null, 2);
   $('trace-deliveries').replaceChildren(...facts.deliveries.map(item => {
     const section = node('section');
@@ -139,10 +162,30 @@ async function trace(id) {
     return section;
   }));
   if (!facts.deliveries.length) $('trace-deliveries').append(node('p', '发布时没有匹配消费组', 'muted'));
+  renderTraceBridges(facts);
   $('trace-events').replaceChildren(...facts.events.map(item => node('li',
-    `${clock(item.at)} · ${TEXT[item.kind === 'leased' ? 'leased_event' : item.kind]} · ${JSON.stringify(item.details)}`)));
+    `${clock(item.at)} · ${TEXT[item.kind === 'leased' ? 'leased_event' : item.kind] || item.kind} · ${JSON.stringify(item.details)}`)));
   $('trace-export').href = `/v1/messages/${id}/evidence`;
   $('trace').showModal();
+}
+
+function renderTraceBridges(facts) {
+  const target = $('trace-bridges');
+  target.replaceChildren();
+  const outgoing = facts.bridges || [];
+  const incoming = facts.incoming || [];
+  if (!outgoing.length && !incoming.length) {
+    target.append(node('p', '没有桥接记录', 'muted'));
+    return;
+  }
+  for (const link of outgoing) {
+    target.append(node('li',
+      `#${link.bridge} v${link.version} → ${link.target} 消息 #${link.target_message_id ?? '—'}`));
+  }
+  for (const link of incoming) {
+    target.append(node('li',
+      `由 #${link.bridge} v${link.version} 从 ${link.source_channel} 消息 #${link.source_message_id} 桥接而来`));
+  }
 }
 
 onForm('create-channel', async ({name}) => {
@@ -159,6 +202,23 @@ onForm('create-group', async ({name, tags}) => {
   await refresh();
   notice('消费组已添加');
 });
+onForm('create-bridge', async ({name, target, tags}) => {
+  const channel = state.channel;
+  await api(`${channelPath()}/bridges`, {name, target, tags: parse(tags, '桥接标签')});
+  $('create-bridge').reset();
+  await refresh();
+  notice(`桥接 #${name} 已建立`);
+});
+onForm('revise-bridge', async ({target, tags}) => {
+  const form = $('revise-bridge');
+  const name = form.dataset.bridge;
+  const expected = Number(form.dataset.expected);
+  const report = await api(`${channelPath()}/bridges/${name}`,
+    {target, tags: parse(tags, '桥接标签'), expected});
+  $('revise-bridge-box').hidden = true;
+  await refresh();
+  notice(`桥接 #${name} 已提交 v${report.version}`);
+});
 onForm('publish', async (values, mode) => {
   const channel = state.channel;
   const reply = await api(`${channelPath()}/${mode || 'messages'}`, {
@@ -169,6 +229,15 @@ onForm('publish', async (values, mode) => {
   $('publication-result').textContent = mode === 'preview'
     ? (reply.groups.length ? `匹配：${reply.groups.join('、')}` : '当前无匹配消费组')
     : `消息 #${reply.message_id} · ${reply.repeated ? '已复用原回执' : '已发布'} · ${Object.keys(reply.fanout).length} 个消费组`;
+  if (mode === 'preview') {
+    const hits = (reply.bridges || []).filter(item => item.match);
+    $('publication-result').textContent += hits.length
+      ? ` · 桥接命中：${hits.map(item => `#${item.bridge}→${item.target}`).join('、')}`
+      : (reply.bridges?.length ? ' · 桥接均不匹配' : '');
+  } else if (reply.bridges?.length) {
+    $('publication-result').textContent +=
+      ` · 桥接 ${reply.bridges.map(item => `#${item.bridge}→目标#${item.target_message_id}`).join('、')}`;
+  }
   if (mode !== 'preview') await refresh();
 });
 onForm('claim', async ({worker, limit}) => {

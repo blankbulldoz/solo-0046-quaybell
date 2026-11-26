@@ -25,7 +25,9 @@ python3 -m quaybell --demo
 | `/channels/{channel}/policy` | POST | 全部四个策略值和预期版号 `expected` |
 | `/channels/{channel}/groups` | POST | `name`、可选匹配 `tags` |
 | `/channels/{channel}/groups/{group}/pause` | POST | `paused` 为布尔值 |
-| `/channels/{channel}/preview` | POST | 用发布信封查询当前标签匹配结果 |
+| `/channels/{channel}/bridges` | GET / POST | 列出当前各桥接最新版，或用 `name`、`target`、匹配 `tags` 建立桥接 |
+| `/channels/{channel}/bridges/{bridge}` | POST | 换版：`target`、匹配 `tags` 和预期版号 `expected` |
+| `/channels/{channel}/preview` | POST | 用发布信封查询当前标签匹配结果与桥接命中 |
 | `/channels/{channel}/messages` | POST | `producer`、`key`、`lane`、`payload`、可选 `tags`、`delay_seconds` |
 | `/channels/{channel}/groups/{group}/claim` | POST | `worker`、可选 `limit`，返回含 `lease.token` 的领取项 |
 | `/deliveries/{id}/ack` | POST | `token` |
@@ -39,10 +41,28 @@ python3 -m quaybell --demo
 
 默认策略是 `lease_seconds=24`、`retry_seconds=3`、`max_attempts=3`、`retention_seconds=3600`。重发原生产键时复用初始匹配结果，内容变化则返回 409。如果应用侧副作用必须去重，应按消息和消费组身份设计处理键。重投需要按其业务语义明确将后继身份识别为有意重新处理。
 
+### 频道桥接
+
+桥接把一个源频道的直接发布条件化地复制为另一个目标频道的独立消息。桥接配置按源频道内的桥接名版本化，条件是与订阅相同的标签精确匹配（空条件表示全收）。只有直接发布参与桥接，目标频道收到的桥接消息不会再被转发。
+
+- 发布在源频道的写事务内完成转发：源回执的 `bridges` 仅在目标消息及其分发都已落库后返回，每个条目带桥接名、命中的配置版本、目标频道、目标消息号和目标频道的分发号。
+- 目标频道完全按自己的订阅和策略分发；桥接消息标记 `origin="bridged"`，与目标频道同生产者同生产键的 `origin="direct"` 直接发布并存，两类消息互不占用对方的去重键，也不会被误认。
+- 源生产键的重发沿用第一次回执（`repeated=true`），复用已持久化的桥接链接而不会再次转发。回执、消息轨迹和证据导出都从链接表重算，因此桥接配置换版后，旧消息仍能凭当时的版本号定位当时的目标结果；换版后的新发布才按新版本另建链接。
+
 以下载荷可发布到示例频道。默认延迟为零。
 
 ```json
 {"producer":"sensor-gate","key":"pulse-next","lane":"coil-north","tags":{"feed":"telemetry"},"payload":{"reading":48,"unit":"mV"}}
+```
+
+## 构建与生产工作流
+
+```sh
+python3 -m compileall -q quaybell examples
+python3 -m examples.walkthrough claim
+python3 -m examples.walkthrough retention
+python3 -m examples.walkthrough export
+python3 -m examples.walkthrough bridge
 ```
 
 ## 构建与生产工作流

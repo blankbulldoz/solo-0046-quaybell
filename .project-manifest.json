@@ -120,6 +120,11 @@
       "id": "api_writes",
       "path": "quaybell/api_writes.py",
       "responsibility": "JSON 处置调度"
+    },
+    {
+      "id": "bridging",
+      "path": "quaybell/bridging.py",
+      "responsibility": "频道桥接配置版本化、匹配转发与持久化回执"
     }
   ],
   "workflows": [
@@ -422,6 +427,28 @@
         "inspection",
         "codec"
       ]
+    },
+    {
+      "id": "bridge",
+      "name": "频道桥接转发与回执",
+      "entry": "POST /v1/channels/{channel}/bridges 与 /messages",
+      "success": "匹配事件在目标频道持久化，源回执确认目标结果且可重算",
+      "failure": "不匹配不转发，重发不重复转发，同键直接发布与桥接消息互不误认",
+      "verification": "python3 -m examples.walkthrough bridge",
+      "steps": [
+        "建立源和目标频道及各自订阅，配置带标签条件的桥接",
+        "匹配发布在同一写事务内生成目标消息与分发，源回执给出目标结果",
+        "目标频道按自身订阅和策略分发，桥接消息与同名直接发布并存且来源可区分",
+        "源回执丢失后按原身份重发只复用原回执，不再产生新的桥接转发",
+        "桥接配置换版后，旧回执仍定位第一版当时的目标结果，新发布按新版另建链接"
+      ],
+      "module_ids": [
+        "bridging",
+        "publication",
+        "routing",
+        "inspection",
+        "persistence"
+      ]
     }
   ],
   "complexity": {
@@ -439,7 +466,8 @@
       "recovery_rollback",
       "error_propagation",
       "delete_removal",
-      "export_freeze"
+      "export_freeze",
+      "bridge_forwarding"
     ]
   }
 }

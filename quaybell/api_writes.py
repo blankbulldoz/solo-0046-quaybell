@@ -1,4 +1,5 @@
-from . import catalog, claims, disposition, expiry, inputs, publication, redrive, retention, subscriptions
+from . import (bridging, catalog, claims, disposition, expiry, inputs, publication, redrive,
+               retention, subscriptions)
 from .protocol import Reply
 
 
@@ -11,6 +12,10 @@ def write(db, action, args, raw, now):
         return Reply(subscriptions.create(db, *args, raw, now), 201)
     if action == 'pause':
         return Reply(subscriptions.pause(db, *args, raw, now))
+    if action == 'create_bridge':
+        return Reply(bridging.create(db, args[0], raw, now), 201)
+    if action == 'revise_bridge':
+        return Reply(bridging.revise(db, args[0], args[1], raw, now), 201)
     if action == 'publish':
         item = publication.publish(db, *args, raw, now)
         return Reply(item, 200 if item['repeated'] else 201)

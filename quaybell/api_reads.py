@@ -1,4 +1,4 @@
-from . import catalog, deadletters, evidence, inspection, overview, retention, routing
+from . import bridging, catalog, deadletters, evidence, inspection, overview, retention, routing
 from .protocol import Reply
 
 
@@ -9,6 +9,8 @@ def read(db, action, args, now):
         return Reply(overview.board(db, args[0], now))
     if action == 'dead':
         return Reply({'items': deadletters.list_recent(db, args[0])})
+    if action == 'bridge_list':
+        return Reply({'channel': args[0], 'bridges': bridging.for_channel(db, args[0])})
     if action == 'trace':
         return Reply(inspection.trace(db, int(args[0])))
     if action == 'retention':

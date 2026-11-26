@@ -1,4 +1,4 @@
-from . import catalog, subscriptions
+from . import bridging, catalog, subscriptions
 from .envelope import Envelope
 
 
@@ -11,4 +11,5 @@ def preview(db, channel, raw):
     catalog.get(db, channel)
     envelope = Envelope.from_input(raw)
     groups = matching(db, channel, envelope.tags)
-    return {'channel': channel, 'groups': [group['name'] for group in groups]}
+    return {'channel': channel, 'groups': [group['name'] for group in groups],
+            'bridges': bridging.preview(db, channel, envelope)}
