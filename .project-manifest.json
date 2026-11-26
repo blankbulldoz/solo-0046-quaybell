@@ -32,6 +32,11 @@
       "responsibility": "生产身份、回执和分发创建"
     },
     {
+      "id": "batches",
+      "path": "quaybell/batches.py",
+      "responsibility": "离线批次的承诺回执、按位置重放和补传期退役"
+    },
+    {
       "id": "journal",
       "path": "quaybell/journal.py",
       "responsibility": "处置顺序和消息级事件"
@@ -421,6 +426,25 @@
         "evidence",
         "inspection",
         "codec"
+      ]
+    },
+    {
+      "id": "batch",
+      "name": "离线批次补交与跨保留期取回回执",
+      "entry": "POST /v1/channels/{channel}/batches",
+      "success": "整批按原输入位置返回承诺回执，消息被清理后仍可在补传期内取回",
+      "failure": "同批标识下顺序或内容改变返回 409 且整批不新增；补传期结束后请求返回 410",
+      "verification": "python3 -m examples.walkthrough batch",
+      "steps": [
+        "通过 POST /v1/channels/{channel}/batches 发起操作",
+        "老生产键与新键可同批，同键重复位置复用同一消息号",
+        "跨保留期重试按原位置取回原批承诺，补传期结束只保留摘要并可清理"
+      ],
+      "module_ids": [
+        "batches",
+        "publication",
+        "retention",
+        "journal"
       ]
     }
   ],

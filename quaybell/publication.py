@@ -16,6 +16,19 @@ def receipt(db, message, repeated):
                 fanout={item['group_name']: item['id'] for item in original})
 
 
+def materialize(db, channel, envelope, encoded, digest, active, now):
+    ready_at = now + envelope.delay_seconds
+    key = db.execute('''INSERT INTO messages(channel,producer,dedup_key,lane,envelope,fingerprint,policy,published,available)
+                        VALUES (?,?,?,?,?,?,?,?,?)''',
+                     (channel, envelope.producer, envelope.dedup_key, envelope.lane, encoded, digest,
+                      active['version'], now, ready_at)).lastrowid
+    fanout = {}
+    for group in routing.matching(db, channel, envelope.tags):
+        fanout[group['name']] = delivery.add(db, key, group['id'], envelope.lane, active['version'], ready_at)
+    journal.append(db, channel, now, 'published', {'fanout': fanout, 'policy': active['version']}, key)
+    return dict(message_id=key, policy=active['version'], repeated=False, fanout=fanout)
+
+
 def publish(db, channel, raw, now):
     catalog.get(db, channel)
     envelope = Envelope.from_input(raw)
@@ -28,13 +41,4 @@ def publish(db, channel, raw, now):
             raise conflict('同一生产键已用于另一条消息')
         return receipt(db, existing, True)
     active = policy.read(db, channel)
-    ready_at = now + envelope.delay_seconds
-    key = db.execute('''INSERT INTO messages(channel,producer,dedup_key,lane,envelope,fingerprint,policy,published,available)
-                        VALUES (?,?,?,?,?,?,?,?,?)''',
-                     (channel, envelope.producer, envelope.dedup_key, envelope.lane, encoded, digest,
-                      active['version'], now, ready_at)).lastrowid
-    fanout = {}
-    for group in routing.matching(db, channel, envelope.tags):
-        fanout[group['name']] = delivery.add(db, key, group['id'], envelope.lane, active['version'], ready_at)
-    journal.append(db, channel, now, 'published', {'fanout': fanout, 'policy': active['version']}, key)
-    return dict(message_id=key, policy=active['version'], repeated=False, fanout=fanout)
+    return materialize(db, channel, envelope, encoded, digest, active, now)

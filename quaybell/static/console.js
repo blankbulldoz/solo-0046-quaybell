@@ -93,7 +93,51 @@ function render() {
         resetRetention();
         await refresh();
       })]), 4, '当前频道没有死信');
+  renderBatches();
   renderLeases();
+}
+
+function fanoutLabel(fanout) {
+  const names = Object.keys(fanout || {});
+  return names.length ? `${names.join('、')}（${names.map(name => `#${fanout[name]}`).join('、')}）` : '无匹配组';
+}
+
+function renderBatches() {
+  const entries = state.board?.batches || [];
+  $('batch-total').textContent = entries.length ? `最近 ${entries.length} 批` : '';
+  rows('batch-rows', entries.map(item => [
+    button(item.batch_key, () => showBatch(item.batch_key), {className: 'link'}),
+    `${item.entries} 个位置`, clock(item.submitted),
+    clock(item.replay_until), clock(item.retire_after),
+    button('回执', () => showBatch(item.batch_key)),
+  ]), 6, '当前频道没有离线补交');
+}
+
+async function showBatch(batchKey) {
+  const facts = await api(`${channelPath()}/batches/${batchKey}`);
+  $('batch-title').textContent = `批次 ${facts.batch}`;
+  $('batch-meta').textContent = `提交 ${clock(facts.submitted)} · 补传期至 ${clock(facts.replay_until)} · `
+    + `退役于 ${clock(facts.retire_after)} · 内容摘要 ${facts.content_digest.slice(0, 16)}…`;
+  if (facts.state === 'closed') {
+    $('batch-note').textContent = facts.note;
+    $('batch-positions').replaceChildren(node('p', '补传期结束后不再保留逐位置回执。', 'muted'));
+  } else {
+    $('batch-note').textContent = facts.pruned_positions.length
+      ? `第 ${facts.pruned_positions.map(index => index + 1).join('、')} 位的消息已按保留期清理，`
+        + '回执仍按原位置给出。'
+      : '';
+    $('batch-positions').replaceChildren(...facts.positions.map(position => {
+      const section = node('section');
+      const heading = node('h4', `第 ${position.position + 1} 位 · ${position.producer} / ${position.key} `);
+      heading.append(traceLink(position.message_id));
+      section.append(heading,
+        node('p', `分发：${fanoutLabel(position.fanout)} · 策略 v${position.policy} · `
+          + `${position.reused ? '复用既有消息' : '本次新建'}` +
+          (facts.pruned_positions.includes(position.position) ? ' · 消息已清理' : ''), 'muted'));
+      return section;
+    }));
+  }
+  $('batch').showModal();
 }
 
 function renderLeases() {
@@ -170,6 +214,22 @@ onForm('publish', async (values, mode) => {
     ? (reply.groups.length ? `匹配：${reply.groups.join('、')}` : '当前无匹配消费组')
     : `消息 #${reply.message_id} · ${reply.repeated ? '已复用原回执' : '已发布'} · ${Object.keys(reply.fanout).length} 个消费组`;
   if (mode !== 'preview') await refresh();
+});
+onForm('batch', async values => {
+  const channel = state.channel;
+  const reply = await api(`${channelPath()}/batches`, {
+    batch: values.batch, entries: parse(values.entries, '信封数组'),
+    replay_seconds: Number(values.replay_seconds),
+  });
+  if (state.channel !== channel) return;
+  const summary = reply.positions.map(position =>
+    `第 ${position.position + 1} 位 ${position.producer}/${position.key} → 消息 #${position.message_id}`
+    + ` · ${Object.keys(position.fanout).length ? Object.keys(position.fanout).join('、') : '无匹配组'}`
+    + `${position.reused ? ' · 复用' : ''}`).join('\n');
+  $('batch-result').textContent = `${reply.repeated ? '已复用原批承诺' : '整批已提交'} · `
+    + `${reply.entries} 个位置 · 补传期至 ${clock(reply.replay_until)}\n${summary}`;
+  notice(reply.repeated ? `批 ${reply.batch} 回执已复用` : `批 ${reply.batch} 已提交`);
+  await refresh();
 });
 onForm('claim', async ({worker, limit}) => {
   if (!group()) return;

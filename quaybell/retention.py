@@ -1,4 +1,4 @@
-from . import catalog, inputs, journal
+from . import batches, catalog, inputs, journal
 
 
 def eligible(db, channel, now, limit):
@@ -13,14 +13,17 @@ def eligible(db, channel, now, limit):
 
 
 def plan(db, channel, now, limit=100):
-    return {'observed_at': now, 'eligible': eligible(db, channel, now, limit)}
+    catalog.get(db, channel)
+    return {'observed_at': now, 'eligible': eligible(db, channel, now, limit),
+            'retirable_batches': batches.retirable(db, channel, now, limit)}
 
 
 def prune(db, channel, raw, now):
     inputs.require(raw, (), ('limit',))
-    keys = [item['id'] for item in eligible(db, channel, now,
-                                          inputs.integer(raw.get('limit', 100), 1, 100, '清理上限'))]
+    limit = inputs.integer(raw.get('limit', 100), 1, 100, '清理上限')
+    keys = [item['id'] for item in eligible(db, channel, now, limit)]
     db.executemany('DELETE FROM messages WHERE id=?', [(key,) for key in keys])
+    retired = batches.retire(db, channel, now, limit)
     if keys:
         journal.append(db, channel, now, 'pruned', {'message_ids': keys})
-    return {'removed': keys, 'observed_at': now}
+    return {'removed': keys, 'retired_batches': retired, 'observed_at': now}

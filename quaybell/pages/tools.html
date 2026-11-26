@@ -18,6 +18,18 @@
     </form>
   </details>
   <details data-needs-channel>
+    <summary>离线批量补交</summary>
+    <form id="batch" class="compact">
+      <div class="pair">
+        <label>批标识<input name="batch" placeholder="gateway-0007" required maxlength="64" pattern="[A-Za-z0-9_.:-]{1,64}"></label>
+        <label>补传期秒数<input name="replay_seconds" type="number" min="1" max="604800" value="86400" required></label>
+      </div>
+      <label>信封数组<textarea name="entries" rows="6" placeholder='[{"producer":"gateway","key":"offline-1","lane":"coil-north","payload":{}}]' required></textarea></label>
+      <button>补交整批</button>
+      <output class="muted" id="batch-result" aria-live="polite"></output>
+    </form>
+  </details>
+  <details data-needs-channel>
     <summary>领取和应答</summary>
     <form id="claim" class="compact">
       <div class="pair">
@@ -43,7 +55,7 @@
   <details data-needs-channel>
     <summary>保留复核</summary>
     <div class="compact">
-      <p class="muted">清理时会重新检查消息年龄和所有关联投递。</p>
+      <p class="muted">清理时会重新检查消息年龄和所有关联投递；补传记录在补传期加保留期后一并退役。</p>
       <div class="button-row"><button type="button" id="retention-plan" class="quiet">查看候选</button><button type="button" id="retention-apply" class="danger" disabled>执行清理</button></div>
       <output class="muted" id="retention-result" aria-live="polite"></output>
     </div>

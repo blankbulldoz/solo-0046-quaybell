@@ -207,9 +207,81 @@ def export(client):
     return {'format': record['format'], 'sha256': digest}
 
 
+def batch(client):
+    client.channel(POLICY | {'max_attempts': 1})
+    client.subscribe()
+    old = client.publish('prod-old-1', 'coil-north')
+    client.request(CHANNEL + '/messages', {'producer': 'other-source', 'key': 'gateway-blip',
+        'lane': 'coil-south', 'payload': {'value': 18}, 'tags': {'feed': 'samples'}}, 201)
+    entries = [envelope('prod-old-1', 'coil-north'),
+               envelope('gateway-new-1', 'coil-east'),
+               envelope('gateway-new-2', 'coil-east', payload={'value': 19}),
+               envelope('gateway-new-2', 'coil-east', payload={'value': 19})]
+    first = client.request(CHANNEL + '/batches', {'batch': 'gateway-0007', 'entries': entries,
+                                                  'replay_seconds': 600}, 201)
+    assert first['repeated'] is False and first['entries'] == 4
+    assert first['positions'][0]['message_id'] == old['message_id']
+    assert [position['reused'] for position in first['positions']] == [True, False, False, True]
+    assert first['positions'][2]['message_id'] == first['positions'][3]['message_id']
+    assert first['positions'][2]['fanout'] == first['positions'][3]['fanout']
+    assert all('oscillator' in position['fanout'] for position in first['positions'])
+    client.request(CHANNEL + '/batches', {'batch': 'gateway-0007', 'entries': entries,
+                                          'replay_seconds': 600}, 200)
+    replay = client.request(CHANNEL + '/batches', {'batch': 'gateway-0007', 'entries': entries}, 200)
+    assert replay['repeated'] is True and replay['positions'] == first['positions']
+    reordered = [entries[1], entries[0], entries[2], entries[3]]
+    client.request(CHANNEL + '/batches', {'batch': 'gateway-0007', 'entries': reordered}, 409)
+    client.request(CHANNEL + '/batches', {'batch': 'gateway-0007',
+        'entries': entries[:2] + [entries[2] | {'payload': {'value': 20}}] + entries[3:]}, 409)
+    before = client.request(CHANNEL)['messages']
+    same_twice = client.request(CHANNEL + '/batches', {'batch': 'gateway-0008', 'entries': [
+        envelope('lane-order-1', 'coil-west'), envelope('lane-order-2', 'coil-west')],
+        'replay_seconds': 600}, 201)
+    clashing = client.request(CHANNEL + '/batches', {'batch': 'gateway-0009', 'entries': [
+        envelope('lane-clash', 'coil-west'),
+        envelope('lane-clash', 'coil-west', payload={'value': 21})]}, 409)
+    after = client.request(CHANNEL)['messages']
+    assert len(after) == len(before) + 2
+    assert clashing['error'] == 'conflict'
+    claimed = [item for item in client.claim(30) if item['message_id'] in {
+        position['message_id'] for position in same_twice['positions']}]
+    assert len(claimed) == 1
+    client.settle(claimed[0])
+    claimed.append(client.claim(30)[0])
+    for item in claimed:
+        client.settle(item)
+    client.tick(11)
+    done = client.request(CHANNEL + '/retention', {})
+    gone = [position['message_id'] for position in same_twice['positions']]
+    assert set(gone) <= set(done['removed'])
+    for message_id in gone:
+        client.request(f'/messages/{message_id}', expected=404)
+    recovered = client.request(CHANNEL + '/batches', {'batch': 'gateway-0008',
+        'entries': [envelope('lane-order-1', 'coil-west'), envelope('lane-order-2', 'coil-west')]}, 200)
+    assert recovered['repeated'] is True and recovered['pruned_positions'] == [0, 1]
+    view = client.request(CHANNEL + '/batches/gateway-0008')
+    assert view['state'] == 'replayable' and view['positions'] == same_twice['positions']
+    client.request(CHANNEL + '/batches', {'batch': 'gateway-0008', 'entries': [
+        envelope('lane-order-2', 'coil-west'), envelope('lane-order-1', 'coil-west')]}, 409)
+    client.tick(600)
+    closed = client.request(CHANNEL + '/batches', {'batch': 'gateway-0008',
+        'entries': [envelope('lane-order-1', 'coil-west'), envelope('lane-order-2', 'coil-west')]}, 410)
+    assert closed['error'] == 'replay_window_closed'
+    kept = client.request(CHANNEL + '/batches/gateway-0008')
+    assert kept['state'] == 'closed' and kept['positions'] is None and kept['entries'] == 2
+    client.tick(11)
+    retired = client.request(CHANNEL + '/retention', {})
+    assert 'gateway-0008' in retired['retired_batches']
+    assert 'gateway-0007' in retired['retired_batches']
+    client.request(CHANNEL + '/batches/gateway-0008', expected=404)
+    return {'first': [position['message_id'] for position in first['positions']],
+            'reordered': reordered[0]['key'], 'clash_batch': 'gateway-0009',
+            'pruned': done['removed'], 'closed': kept['state'], 'retired': retired['retired_batches']}
+
+
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             redrive=redrive, board=board, retention=retention, export=export, batch=batch)
 
 
 def main():

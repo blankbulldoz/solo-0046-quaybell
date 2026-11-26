@@ -4,6 +4,7 @@ from .errors import invalid
 
 NAME = re.compile(r'[a-z][a-z0-9-]{0,47}\Z')
 TOKEN = re.compile(r'[A-Za-z0-9_./:-]{1,96}\Z')
+BATCH = re.compile(r'[A-Za-z0-9_.:-]{1,64}\Z')
 
 
 def name(value, label):
@@ -15,6 +16,12 @@ def name(value, label):
 def token(value, label):
     if not isinstance(value, str) or not TOKEN.fullmatch(value):
         raise invalid(f'{label}格式无效')
+    return value
+
+
+def batch_key(value, label):
+    if not isinstance(value, str) or not BATCH.fullmatch(value):
+        raise invalid(f'{label}须为 1～64 个字母、数字、下划线、短横线、点或冒号')
     return value
 
 

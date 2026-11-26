@@ -1,4 +1,4 @@
-from . import catalog, claims, disposition, expiry, inputs, publication, redrive, retention, subscriptions
+from . import batches, catalog, claims, disposition, expiry, inputs, publication, redrive, retention, subscriptions
 from .protocol import Reply
 
 
@@ -13,6 +13,9 @@ def write(db, action, args, raw, now):
         return Reply(subscriptions.pause(db, *args, raw, now))
     if action == 'publish':
         item = publication.publish(db, *args, raw, now)
+        return Reply(item, 200 if item['repeated'] else 201)
+    if action == 'submit_batch':
+        item = batches.submit(db, *args, raw, now)
         return Reply(item, 200 if item['repeated'] else 201)
     if action == 'claim':
         return Reply(claims.claim(db, *args, raw, now))

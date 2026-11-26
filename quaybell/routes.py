@@ -2,6 +2,8 @@ import re
 
 CHANNEL = r'/v1/channels/([a-z][a-z0-9-]{0,47})'
 GROUP = CHANNEL + r'/groups/([a-z][a-z0-9-]{0,47})'
+BATCH_KEY = r'([A-Za-z0-9_.:-]{1,64})'
+BATCH = CHANNEL + r'/batches/' + BATCH_KEY
 MESSAGE = r'/v1/messages/([1-9][0-9]{0,17})'
 DELIVERY = r'/v1/deliveries/([1-9][0-9]{0,17})'
 
@@ -9,11 +11,13 @@ PATTERNS = {
     'GET': (
         ('/v1/channels', 'channels'), (CHANNEL, 'board'), (CHANNEL + '/dead', 'dead'),
         (MESSAGE, 'trace'), (MESSAGE + '/evidence', 'export'), (CHANNEL + '/retention', 'retention'),
+        (BATCH, 'batch'),
     ),
     'POST': (
         ('/v1/channels', 'create_channel'), (CHANNEL + '/policy', 'revision'),
         (CHANNEL + '/groups', 'subscribe'), (GROUP + '/pause', 'pause'),
         (CHANNEL + '/preview', 'preview'), (CHANNEL + '/messages', 'publish'),
+        (CHANNEL + '/batches', 'submit_batch'),
         (GROUP + '/claim', 'claim'), (DELIVERY + '/ack', 'ack'), (DELIVERY + '/nack', 'nack'),
         ('/v1/sweep', 'sweep'), (DELIVERY + '/redrive', 'redrive'), (CHANNEL + '/retention', 'prune'),
     ),

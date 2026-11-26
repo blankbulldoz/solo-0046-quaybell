@@ -1,4 +1,4 @@
-VERSION = 1
+VERSION = 2
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS channels (
   name TEXT PRIMARY KEY,
@@ -70,6 +70,18 @@ CREATE TABLE IF NOT EXISTS journal (
   at REAL NOT NULL,
   kind TEXT NOT NULL,
   details TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS batches (
+  channel TEXT NOT NULL REFERENCES channels(name),
+  batch_key TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  entries INTEGER NOT NULL,
+  receipt TEXT NOT NULL,
+  digest TEXT NOT NULL,
+  submitted REAL NOT NULL,
+  replay_until REAL NOT NULL,
+  retire_after REAL NOT NULL,
+  PRIMARY KEY(channel, batch_key)
 );
 CREATE INDEX IF NOT EXISTS delivery_lane ON deliveries(subscription_id,lane,id)
   WHERE state IN ('waiting','leased');

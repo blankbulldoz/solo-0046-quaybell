@@ -27,6 +27,8 @@ python3 -m quaybell --demo
 | `/channels/{channel}/groups/{group}/pause` | POST | `paused` 为布尔值 |
 | `/channels/{channel}/preview` | POST | 用发布信封查询当前标签匹配结果 |
 | `/channels/{channel}/messages` | POST | `producer`、`key`、`lane`、`payload`、可选 `tags`、`delay_seconds` |
+| `/channels/{channel}/batches` | POST | `batch`、`entries` 信封数组、可选 `replay_seconds`，整批承诺并按位置返回回执 |
+| `/channels/{channel}/batches/{batch}` | GET | 补传期内的逐位置回执，或结束后的批摘要 |
 | `/channels/{channel}/groups/{group}/claim` | POST | `worker`、可选 `limit`，返回含 `lease.token` 的领取项 |
 | `/deliveries/{id}/ack` | POST | `token` |
 | `/deliveries/{id}/nack` | POST | `token` 和 `reason` |
@@ -38,6 +40,8 @@ python3 -m quaybell --demo
 | `/channels/{channel}/retention` | GET / POST | 候选复核，或以 `{}` / `limit` 清理实际合格项 |
 
 默认策略是 `lease_seconds=24`、`retry_seconds=3`、`max_attempts=3`、`retention_seconds=3600`。重发原生产键时复用初始匹配结果，内容变化则返回 409。如果应用侧副作用必须去重，应按消息和消费组身份设计处理键。重投需要按其业务语义明确将后继身份识别为有意重新处理。
+
+离线补交（例如网关断线后补交的离线信封）使用 `POST /channels/{channel}/batches`，同一 `batch` 标识只承诺一组顺序和内容。批内可混入已发布的老生产键与新键，同一生产键也可以占多个位置，这些位置必须给出相同内容。整批在一个写事务内落库，任何位置与既有消息冲突或同批内同键异内容都会整批拒绝且不新增消息或分发。客户端丢失回执后按原顺序重发得到原承诺；顺序或内容改变返回 409。补传期由 `replay_seconds` 决定，独立于消息保留期：即使原消息已按保留期清理，`GET /channels/{channel}/batches/{batch}` 仍在期内按原输入位置给出消息号、分发与是否复用，因此不要在清理后重发。补传期结束后返回 410，但该批的标识、位置数和内容摘要仍可读到，直到补传期加当前保留期后由保留清理退役该记录，正常消息清理不受影响。
 
 以下载荷可发布到示例频道。默认延迟为零。
 
@@ -52,6 +56,7 @@ python3 -m compileall -q quaybell examples
 python3 -m examples.walkthrough claim
 python3 -m examples.walkthrough retention
 python3 -m examples.walkthrough export
+python3 -m examples.walkthrough batch
 ```
 
 每个工作流示例使用临时 SQLite 文件、受控时钟和本机随机端口，运行完即释放。可用 `python3 -m examples.walkthrough --help` 列出所有工作流。正式测试套件延后建设。
