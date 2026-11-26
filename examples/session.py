@@ -33,6 +33,27 @@ class Session:
                 raise RuntimeError((path, response.code, expected, body))
             return body
 
+    def download(self, path, accept=None, cut_after=None):
+        """Fetch an evidence endpoint, optionally cutting the body mid-stream.
+
+        ``cut_after`` keeps only this many raw response bytes so interrupted
+        downloads can be reproduced.  Returns status, headers and raw bytes.
+        """
+        headers = {}
+        if accept is not None:
+            headers['Accept'] = accept
+        req = Request(self.base + path, headers=headers)
+        try:
+            response = urlopen(req, timeout=5)
+        except HTTPError as exc:
+            response = exc
+        with response:
+            if cut_after is None:
+                body = response.read()
+            else:
+                body = response.read(cut_after)
+            return response.code, dict(response.headers), body
+
     def tick(self, amount):
         self.clock[0] += amount
 

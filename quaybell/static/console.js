@@ -142,6 +142,7 @@ async function trace(id) {
   $('trace-events').replaceChildren(...facts.events.map(item => node('li',
     `${clock(item.at)} · ${TEXT[item.kind === 'leased' ? 'leased_event' : item.kind]} · ${JSON.stringify(item.details)}`)));
   $('trace-export').href = `/v1/messages/${id}/evidence`;
+  $('trace-export-stream').href = `/v1/messages/${id}/evidence/stream`;
   $('trace').showModal();
 }
 

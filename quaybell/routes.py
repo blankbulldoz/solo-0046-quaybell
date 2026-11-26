@@ -8,7 +8,9 @@ DELIVERY = r'/v1/deliveries/([1-9][0-9]{0,17})'
 PATTERNS = {
     'GET': (
         ('/v1/channels', 'channels'), (CHANNEL, 'board'), (CHANNEL + '/dead', 'dead'),
-        (MESSAGE, 'trace'), (MESSAGE + '/evidence', 'export'), (CHANNEL + '/retention', 'retention'),
+        (MESSAGE, 'trace'), (MESSAGE + '/evidence', 'export'),
+        (MESSAGE + '/evidence/stream', 'export_stream'),
+        (CHANNEL + '/retention', 'retention'),
     ),
     'POST': (
         ('/v1/channels', 'create_channel'), (CHANNEL + '/policy', 'revision'),

@@ -14,7 +14,9 @@ def unpack(raw):
 
 
 def fingerprint(raw):
-    return hashlib.sha256(raw.encode('utf-8')).hexdigest()
+    if isinstance(raw, str):
+        raw = raw.encode('utf-8')
+    return hashlib.sha256(raw).hexdigest()
 
 
 def object_body(raw):

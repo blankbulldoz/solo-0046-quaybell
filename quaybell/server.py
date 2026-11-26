@@ -44,18 +44,30 @@ class RelayRequest(BaseHTTPRequestHandler):
                 reply = protocol.Reply({'error': 'internal', 'message': '存储操作失败'}, 500)
         except TimeoutError:
             reply = protocol.Reply({'error': 'timeout', 'message': '读取请求超时'}, 408)
-        body = reply.body()
+        body = None if isinstance(reply, protocol.StreamReply) else reply.body()
         try:
             self.send_response(reply.status)
             self.send_header('Content-Type', reply.content_type)
-            self.send_header('Content-Length', str(len(body)))
+            if body is not None:
+                self.send_header('Content-Length', str(len(body)))
+            else:
+                # send_header drops Transfer-Encoding; frame chunks manually.
+                self._headers_buffer.append(b'Transfer-Encoding: chunked\r\n')
             self.send_header('Cache-Control', 'no-persistence')
             self.send_header('X-Content-Type-Options', 'nosniff')
             self.send_header('Content-Security-Policy', "default-src 'self'; frame-ancestors 'none'")
             if reply.filename:
                 self.send_header('Content-Disposition', f'attachment; filename="{reply.filename}"')
             self.end_headers()
-            self.wfile.write(body)
+            if body is not None:
+                self.wfile.write(body)
+            else:
+                for frame in reply.frames:
+                    self.wfile.write(f'{len(frame):X}\r\n'.encode('ascii'))
+                    self.wfile.write(frame)
+                    self.wfile.write(b'\r\n')
+                self.wfile.write(b'0\r\n\r\n')
+                self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError, TimeoutError):
             return
 
@@ -69,7 +81,7 @@ class RelayRequest(BaseHTTPRequestHandler):
         action, args = route
         if method == 'GET':
             with self.server.persistence.session() as db:
-                return api_reads.read(db, action, args, self.server.clock())
+                return api_reads.read(db, action, args, self.server.clock(), self)
         raw = protocol.receive(self)
         with self.server.persistence.session(write=action != 'preview') as db:
             if action == 'preview':

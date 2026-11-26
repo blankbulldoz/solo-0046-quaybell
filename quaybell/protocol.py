@@ -20,6 +20,15 @@ class Reply:
         return codec.pack(self.data).encode('ascii')
 
 
+@dataclass(frozen=True)
+class StreamReply:
+    """A reply whose body is produced frame by frame."""
+    frames: object
+    status: int = 200
+    content_type: str = 'application/x-ndjson; charset=utf-8'
+    filename: str | None = None
+
+
 def receive(request):
     if request.headers.get('Transfer-Encoding'):
         raise RelayError(400, 'invalid_framing', '请求须声明固定长度')
