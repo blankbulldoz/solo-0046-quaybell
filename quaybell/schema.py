@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS journal (
 );
 CREATE INDEX IF NOT EXISTS delivery_lane ON deliveries(subscription_id,lane,id)
   WHERE state IN ('waiting','leased');
+CREATE INDEX IF NOT EXISTS delivery_service ON deliveries(subscription_id,lane,id);
 CREATE INDEX IF NOT EXISTS delivery_origin ON deliveries(message_id,id);
 CREATE INDEX IF NOT EXISTS attempt_deadline ON attempts(expires,id) WHERE outcome='open';
 CREATE UNIQUE INDEX IF NOT EXISTS one_open_attempt ON attempts(delivery_id) WHERE outcome='open';

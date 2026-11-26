@@ -27,7 +27,7 @@ python3 -m quaybell --demo
 | `/channels/{channel}/groups/{group}/pause` | POST | `paused` 为布尔值 |
 | `/channels/{channel}/preview` | POST | 用发布信封查询当前标签匹配结果 |
 | `/channels/{channel}/messages` | POST | `producer`、`key`、`lane`、`payload`、可选 `tags`、`delay_seconds` |
-| `/channels/{channel}/groups/{group}/claim` | POST | `worker`、可选 `limit`，返回含 `lease.token` 的领取项 |
+| `/channels/{channel}/groups/{group}/claim` | POST | `worker`、可选 `limit`，返回含 `lease.token` 的领取项；多个顺序键可领时按最久未服务轮转 |
 | `/deliveries/{id}/ack` | POST | `token` |
 | `/deliveries/{id}/nack` | POST | `token` 和 `reason` |
 | `/sweep` | POST | `{}` 或 `limit`，按原截止时间回收全局租约 |
@@ -50,6 +50,7 @@ python3 -m quaybell --demo
 ```sh
 python3 -m compileall -q quaybell examples
 python3 -m examples.walkthrough claim
+python3 -m examples.walkthrough fairness
 python3 -m examples.walkthrough retention
 python3 -m examples.walkthrough export
 ```

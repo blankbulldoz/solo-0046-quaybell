@@ -77,7 +77,8 @@ function render() {
     return card;
   }));
   rows('queue-rows', (selected?.sample || []).map(item => [traceLink(item.message_id, `#${item.id}`),
-    item.lane, status(item.cause), `#${item.head_id}`, clock(item.ready_at)]), 5,
+    item.lane, status(item.cause), `#${item.head_id}`, clock(item.ready_at),
+    item.last_served == null ? '从未' : clock(item.last_served)]), 6,
     selected ? '当前消费组没有未完成投递' : '请选择已有消费组');
   const messages = board?.messages || [];
   $('message-total').textContent = messages.length ? `最近 ${messages.length} 条` : '';

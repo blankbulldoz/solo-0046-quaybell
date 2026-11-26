@@ -273,6 +273,25 @@
       ]
     },
     {
+      "id": "fairness",
+      "name": "多顺序键公平轮转领取",
+      "entry": "POST /v1/channels/{channel}/groups/{group}/claim",
+      "success": "两个热键与一个冷键各得一次服务机会后才回到队首重取",
+      "failure": "重试未到就绪时间或组暂停时领取为空",
+      "verification": "python3 -m examples.walkthrough fairness",
+      "steps": [
+        "通过 POST /v1/channels/{channel}/groups/{group}/claim 逐条领取",
+        "可领键按最近一次获得租约的先后轮转，未服务过的键优先",
+        "同键仍由队首独占，前序结清后才递进"
+      ],
+      "module_ids": [
+        "claims",
+        "eligibility",
+        "attempts",
+        "disposition"
+      ]
+    },
+    {
       "id": "ack",
       "name": "凭租约确认处理结果",
       "entry": "POST /v1/deliveries/{id}/ack",

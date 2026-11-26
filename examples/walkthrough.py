@@ -102,6 +102,81 @@ def claim(client):
     return {'initial': independent['message_id'], 'head': head['message_id'], 'after_ack': tail['message_id']}
 
 
+def fairness(client):
+    policy = dict(lease_seconds=60, retry_seconds=20, max_attempts=3, retention_seconds=600)
+    client.channel(policy)
+    client.subscribe()
+    # 两个热键各两条立即可领，另各一条延迟到冷键重试同一时刻；冷键一条立即就绪。
+    for lane, key, delay in (('coil-north', 'hot-a1', 0), ('coil-north', 'hot-a2', 0),
+                             ('coil-north', 'hot-a3', 20), ('coil-south', 'hot-b1', 0),
+                             ('coil-south', 'hot-b2', 0), ('coil-south', 'hot-b3', 20),
+                             ('coil-west', 'cold-1', 0)):
+        client.publish(key, lane, delay_seconds=delay)
+    sequence = []
+
+    def take(expect=None):
+        items = client.claim(1)
+        assert len(items) <= 1
+        if not items:
+            return None
+        row = {'lane': items[0]['lane'], 'delivery_id': items[0]['delivery_id'],
+               'attempt': items[0]['lease']['number']}
+        sequence.append(row)
+        if expect is not None:
+            assert items[0]['lane'] == expect, (items[0]['lane'], expect)
+        return items[0]
+
+    # 三个键同时可领且都未服务过：按投递 ID 各得一次机会，冷键不会垫底。
+    first = take('coil-north')
+    second = take('coil-south')
+    cold = take('coil-west')
+    assert [first['delivery_id'], second['delivery_id'], cold['delivery_id']] == [1, 4, 7]
+    client.settle(first)
+    client.settle(second)
+    retry_at = client.settle(cold, 'nack')['effective_at']
+
+    # 冷键退避后，两个热键各再取一条队首，仍然交替且不越队。
+    third = take('coil-north')
+    fourth = take('coil-south')
+    assert [third['delivery_id'], fourth['delivery_id']] == [2, 5]
+    client.settle(third)
+    client.settle(fourth)
+
+    # 热键队首已结清但延迟消息未到，冷键在退避中：空领取，不提前发租约。
+    assert take() is None
+    client.tick(int(retry_at - client.clock[0]) - 1)
+    assert take() is None
+
+    # 冷键重试到点，与两个热键的延迟消息同时可领。冷键最久未服务，先取；
+    # 同键队首递进后，两个热键再按上次服务先后各取一条。
+    client.tick(1)
+    late = take('coil-west')
+    fifth = take('coil-north')
+    sixth = take('coil-south')
+    assert late['lease']['number'] == 2
+    assert [late['delivery_id'], fifth['delivery_id'], sixth['delivery_id']] == [7, 3, 6]
+    for item in (late, fifth, sixth):
+        client.settle(item)
+    assert take() is None
+
+    # 停组再恢复：暂停期间领取为空，恢复后新键照常可领。
+    client.publish('hold-1', 'coil-east')
+    client.request(GROUP + '/pause', {'paused': True})
+    paused = client.request(GROUP + '/claim', {'worker': 'bench-worker', 'limit': 1})
+    assert paused == {'paused': True, 'items': []}
+    client.request(GROUP + '/pause', {'paused': False})
+    resumed = take('coil-east')
+    client.settle(resumed)
+
+    return {'sequence': sequence,
+            'lanes': [item['lane'] for item in sequence],
+            'empty_claims': {'idle_before_retry': True, 'one_second_early': True},
+            'retry_ready_at': retry_at,
+            'paused_claim': paused,
+            'first_service': [row['delivery_id'] for row in sequence[:3]],
+            'late_retry_delivery': late['delivery_id']}
+
+
 def ack(client):
     client.channel()
     client.subscribe()
@@ -208,8 +283,8 @@ def export(client):
 
 
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
-             inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             inspect=inspect, pause=pause, claim=claim, fairness=fairness, ack=ack, retry=retry,
+             sweep=sweep, dead=dead, redrive=redrive, board=board, retention=retention, export=export)
 
 
 def main():
