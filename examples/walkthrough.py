@@ -179,6 +179,52 @@ def board(client):
     return {'first': old['counts'], 'after_pause': now['counts']}
 
 
+def review(client):
+    client.channel(POLICY)
+    client.subscribe()
+    published = [client.publish(f'signal-{n}')['message_id'] for n in range(1, 5)]
+    client.settle(client.claim()[0])
+    client.settle(client.claim()[0], 'nack')
+
+    first = client.review(query={'limit': 2})
+    page = first['page']
+    assert page['bound'] == published[-1] and page['latest'] == published[-1]
+    assert [item['id'] for item in first['messages']] == published[::-1][:2]
+    screen_at = page['observed_at']
+
+    later = client.publish('signal-5')['message_id']
+    outside = client.review(query={'limit': 2})
+    assert outside['page']['bound'] == later and outside['page']['latest'] == later
+    assert later not in {item['id'] for item in first['messages']}
+    assert page['bound'] < later
+
+    client.tick(11)
+    removed = client.request(CHANNEL + '/retention', {'limit': 1})['removed']
+    assert removed == [published[0]]
+
+    second = client.review(query={'bound': page['bound'], 'before': page['next_cursor'], 'limit': 2})
+    assert [item['id'] for item in second['messages']] == published[1:2]
+    assert second['pruned'] == removed
+    assert second['page']['complete'] and second['page']['bound'] == page['bound']
+    assert second['page']['latest'] == later
+    client.review(query={'before': page['next_cursor']}, expected=400)
+    pruned_detail = client.request(f'/messages/{removed[0]}', expected=410)
+    assert pruned_detail['error'] == 'pruned' and pruned_detail['pruned_at'] > screen_at
+
+    client.tick(1)
+    revived = client.claim()[0]
+    assert revived['message_id'] == published[1]
+    detail = client.request(f"/messages/{revived['message_id']}")
+    assert detail['observed_at'] > screen_at
+    assert detail['message']['published'] <= screen_at
+    attempt = detail['deliveries'][0]['attempts'][-1]
+    assert attempt['number'] == 2 and attempt['started'] == detail['observed_at']
+    return {'bound': page['bound'], 'screen': [item['id'] for item in first['messages']],
+            'outside': later, 'pruned': second['pruned'], 'pruned_at': pruned_detail['pruned_at'],
+            'list_observed_at': screen_at, 'detail_observed_at': detail['observed_at'],
+            'revived': revived['message_id'], 'attempt': attempt['number']}
+
+
 def retention(client):
     client.channel(POLICY | {'max_attempts': 1})
     client.subscribe()
@@ -194,7 +240,8 @@ def retention(client):
     plan = client.request(CHANNEL + '/retention')
     assert [row['id'] for row in plan['eligible']] == [first['message_id']]
     done = client.request(CHANNEL + '/retention', {})
-    client.request(f"/messages/{first['message_id']}", expected=404)
+    pruned = client.request(f"/messages/{first['message_id']}", expected=410)
+    assert pruned['pruned_at'] == done['observed_at']
     assert done['removed'] == [first['message_id']] and client.publish()['message_id'] > later['message_id']
     return done
 
@@ -209,7 +256,7 @@ def export(client):
 
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             redrive=redrive, board=board, review=review, retention=retention, export=export)
 
 
 def main():

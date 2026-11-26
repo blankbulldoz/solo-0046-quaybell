@@ -92,6 +92,11 @@
       "responsibility": "组状态、队列和近期消息快照"
     },
     {
+      "id": "review",
+      "path": "quaybell/review.py",
+      "responsibility": "有界消息审阅分页、清理缺口和观测时点"
+    },
+    {
       "id": "retention",
       "path": "quaybell/retention.py",
       "responsibility": "基于消息年龄和派生投递的清理"
@@ -384,6 +389,27 @@
         "eligibility",
         "subscriptions",
         "inspection"
+      ]
+    },
+    {
+      "id": "review",
+      "name": "在固定上界内审阅消息并识别清理缺口",
+      "entry": "GET /v1/channels/{channel}/messages",
+      "success": "一次查询在同一边界内继续向更早翻页，期间新发布不挤入，清理记录在 pruned 中可见",
+      "failure": "缺少范围上限的游标或越界游标返回 400；已清理消息详情返回 410",
+      "verification": "python3 -m examples.walkthrough review",
+      "steps": [
+        "通过 GET /v1/channels/{channel}/messages?bound=&before=&limit= 发起操作",
+        "首次首屏绑定范围上限，之后发布的消息 ID 更大不会进入该范围",
+        "继续翻页遇到保留期删除的 ID 时在 pruned 中报告，而不是静默跳过",
+        "列表按本次读取的 observed_at 断言，详情和导出各自携带观测时点"
+      ],
+      "module_ids": [
+        "review",
+        "inspection",
+        "overview",
+        "retention",
+        "evidence"
       ]
     },
     {

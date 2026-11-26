@@ -35,7 +35,7 @@ class RelayRequest(BaseHTTPRequestHandler):
         try:
             reply = self.resolve_route(method)
         except RelayError as exc:
-            reply = protocol.Reply({'error': exc.code, 'message': str(exc)}, exc.status)
+            reply = protocol.Reply({'error': exc.code, 'message': str(exc)} | exc.details, exc.status)
         except sqlite3.OperationalError as exc:
             if getattr(exc, 'sqlite_errorcode', 0) & 255 in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
                 reply = protocol.Reply({'error': 'busy', 'message': '中继存储繁忙，请稍后按原身份重试'}, 503)
@@ -60,7 +60,8 @@ class RelayRequest(BaseHTTPRequestHandler):
             return
 
     def resolve_route(self, method):
-        path = urlsplit(self.path).path
+        parts = urlsplit(self.path)
+        path = parts.path
         route = routes.match(method, path)
         if route is None:
             if method == 'GET' and not path.startswith('/v1/'):
@@ -69,7 +70,7 @@ class RelayRequest(BaseHTTPRequestHandler):
         action, args = route
         if method == 'GET':
             with self.server.persistence.session() as db:
-                return api_reads.read(db, action, args, self.server.clock())
+                return api_reads.read(db, action, args, self.server.clock(), parts.query)
         raw = protocol.receive(self)
         with self.server.persistence.session(write=action != 'preview') as db:
             if action == 'preview':

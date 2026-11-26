@@ -67,6 +67,10 @@
       "command": "python3 -m examples.walkthrough board"
     },
     {
+      "workflow_id": "review",
+      "command": "python3 -m examples.walkthrough review"
+    },
+    {
       "workflow_id": "retention",
       "command": "python3 -m examples.walkthrough retention"
     },

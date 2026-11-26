@@ -48,6 +48,10 @@ class Session:
     def claim(self, limit=1, worker='bench-worker'):
         return self.request(GROUP + '/claim', {'worker': worker, 'limit': limit})['items']
 
+    def review(self, channel=CHANNEL, query=None, expected=200):
+        suffix = '' if not query else '?' + '&'.join(f'{key}={value}' for key, value in query.items())
+        return self.request(f'{channel}/messages{suffix}', expected=expected)
+
     def settle(self, item, mode='ack', expected=200):
         data = {'token': item['lease']['token']}
         if mode == 'nack':

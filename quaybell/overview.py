@@ -1,6 +1,6 @@
 from collections import Counter
 
-from . import catalog, deadletters, eligibility, inspection, policy, subscriptions
+from . import catalog, deadletters, eligibility, policy, review, subscriptions
 
 
 def board(db, channel, now):
@@ -13,6 +13,7 @@ def board(db, channel, now):
             if len(sample) < 20:
                 sample.append(item)
         summary.append(group | {'counts': dict(counts), 'sample': sample})
+    first = review.page(db, channel, now, limit=review.DEFAULT_LIMIT)
     return {'channel': channel, 'observed_at': now, 'policy': policy.read(db, channel),
-            'groups': summary, 'messages': inspection.recent(db, channel),
-            'dead': deadletters.list_recent(db, channel)}
+            'groups': summary, 'messages': first['messages'], 'message_page': first['page'],
+            'pruned': first['pruned'], 'dead': deadletters.list_recent(db, channel)}

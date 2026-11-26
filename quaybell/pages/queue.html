@@ -11,8 +11,18 @@
       <tbody id="queue-rows"></tbody>
     </table></div>
   </section>
-  <section class="table-section">
-    <div class="section-head"><h2>近期消息</h2><span class="muted" id="message-total"></span></div>
+  <section class="table-section" aria-labelledby="review-title">
+    <div class="section-head">
+      <div>
+        <h2 id="review-title">消息审阅</h2>
+        <span class="muted" id="review-meta"></span>
+      </div>
+      <div class="button-row">
+        <button type="button" class="quiet" id="review-older" disabled>查看更早</button>
+        <button type="button" class="quiet" id="review-latest" disabled>回到最新</button>
+      </div>
+    </div>
+    <p class="muted review-note" id="review-note" hidden></p>
     <div class="scroll"><table>
       <thead><tr><th scope="col">消息</th><th scope="col">生产者</th><th scope="col">生产键</th><th scope="col">策略</th><th scope="col">发布时间</th></tr></thead>
       <tbody id="message-rows"></tbody>

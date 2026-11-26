@@ -12,7 +12,12 @@ export async function api(path, data) {
   };
   const response = await fetch(`/v1${path}`, options);
   const body = await response.json();
-  if (!response.ok) throw new Error(body.message || `请求失败（${response.status}）`);
+  if (!response.ok) {
+    const problem = new Error(body.message || `请求失败（${response.status}）`);
+    problem.status = response.status;
+    problem.detail = body;
+    throw problem;
+  }
   return body;
 }
 

@@ -1,6 +1,7 @@
 import {$, TEXT, api, button, clock, node, notice, onForm, parse, rows, run, status} from './relay.js';
 
-const state = {channel: null, group: null, board: null, sequence: 0, retention: null, leases: new Map()};
+const state = {channel: null, group: null, board: null, sequence: 0, retention: null,
+  leases: new Map(), review: null};
 const policyFields = ['lease_seconds', 'retry_seconds', 'max_attempts', 'retention_seconds'];
 const group = () => state.board?.groups.find(item => item.name === state.group);
 const channelPath = () => `/channels/${state.channel}`;
@@ -28,10 +29,28 @@ async function choose(channel) {
     state.channel = channel;
     state.group = null;
     state.board = null;
+    state.review = null;
     $('publication-result').textContent = '';
     resetRetention();
   }
   await refresh();
+}
+
+async function loadReview(params, tail) {
+  const channel = state.channel;
+  const query = new URLSearchParams(params).toString();
+  const slice = await api(`${channelPath()}/messages?${query}`);
+  if (state.channel !== channel) return;
+  slice.tail = tail;
+  state.review = slice;
+  renderReview(slice.messages);
+}
+
+async function olderReview() {
+  const page = state.review?.page;
+  if (!page?.next_cursor) return;
+  await loadReview({bound: String(page.bound), before: String(page.next_cursor),
+    limit: String(page.limit)}, false);
 }
 
 async function refresh() {
@@ -42,6 +61,12 @@ async function refresh() {
   const board = state.channel ? await api(channelPath()) : null;
   if (current !== state.sequence) return;
   state.board = board;
+  if (board && state.review?.tail !== false) {
+    state.review = {page: board.message_page, messages: board.messages, pruned: board.pruned, tail: true};
+  } else if (board && state.review) {
+    state.review.page = {...state.review.page, latest: board.message_page.latest};
+  }
+  if (!board) state.review = null;
   if (!group()) state.group = board?.groups[0]?.name ?? null;
   $('channels').replaceChildren(...(topology.length ? topology.map(({name}) =>
     selectButton(name, name === state.channel, () => choose(name))) : [node('p', '暂无频道', 'muted')]));
@@ -79,10 +104,8 @@ function render() {
   rows('queue-rows', (selected?.sample || []).map(item => [traceLink(item.message_id, `#${item.id}`),
     item.lane, status(item.cause), `#${item.head_id}`, clock(item.ready_at)]), 5,
     selected ? '当前消费组没有未完成投递' : '请选择已有消费组');
-  const messages = board?.messages || [];
-  $('message-total').textContent = messages.length ? `最近 ${messages.length} 条` : '';
-  rows('message-rows', messages.map(item => [traceLink(item.id), item.producer, item.dedup_key,
-    `v${item.policy}`, clock(item.published)]), 5, '当前频道没有消息');
+  if (state.review) renderReview(state.review.messages);
+  else rows('message-rows', [], 5, '当前频道没有消息');
   const dead = board?.dead || [];
   $('dead-total').textContent = dead.length ? `最近 ${dead.length} 条` : '';
   rows('dead-rows', dead.map(item => [traceLink(item.message_id, `#${item.id}`), item.group_name,
@@ -94,6 +117,38 @@ function render() {
         await refresh();
       })]), 4, '当前频道没有死信');
   renderLeases();
+}
+
+function renderReview(messages) {
+  const slice = state.review;
+  const page = slice?.page;
+  if (!page) {
+    $('review-meta').textContent = '';
+    $('review-note').hidden = true;
+    $('review-older').disabled = true;
+    $('review-latest').disabled = true;
+    rows('message-rows', [], 5, '当前频道没有消息');
+    return;
+  }
+  const newest = messages.length ? `#${messages[0].id}` : '—';
+  const oldest = messages.length ? `#${messages[messages.length - 1].id}` : '—';
+  $('review-meta').textContent =
+    `范围上限 #${page.bound} · 本页 ${newest}–${oldest} · 列表观测于 ${clock(page.observed_at)}` +
+    (page.complete ? ' · 已到范围末端' : ' · 还有更早消息');
+  $('review-older').disabled = !page.next_cursor;
+  $('review-latest').disabled = page.bound === page.latest;
+  const notes = [];
+  if (page.latest !== page.bound) {
+    notes.push(`正在审阅固定范围（上限 #${page.bound}）；此后发布的消息不会挤入本列表。回到最新可载入新上限 #${page.latest}。`);
+  }
+  if (slice.pruned.length) {
+    notes.push(`本段范围内有 ${slice.pruned.length} 条记录因保留期清理不可用：${slice.pruned.map(id => `#${id}`).join('、')}。`);
+  }
+  $('review-note').textContent = notes.join(' ');
+  $('review-note').hidden = !notes.length;
+  rows('message-rows', messages.map(item => [traceLink(item.id), item.producer, item.dedup_key,
+    `v${item.policy}`, clock(item.published)]), 5,
+    page.bound === 0 ? '当前频道没有消息' : '此范围内没有消息');
 }
 
 function renderLeases() {
@@ -122,10 +177,20 @@ function renderLeases() {
 }
 
 async function trace(id) {
-  const facts = await api(`/messages/${id}`);
+  let facts;
+  try {
+    facts = await api(`/messages/${id}`);
+  } catch (problem) {
+    if (problem.status === 410) {
+      const detail = problem.detail || {};
+      notice(`消息 #${id} 已按保留期清理（${detail.pruned_at ? clock(detail.pruned_at) : '时间未知'}），详情不可用。`, true);
+      return;
+    }
+    throw problem;
+  }
   $('trace-title').textContent = `消息 #${id}`;
   const m = facts.message;
-  $('trace-meta').textContent = `${m.channel} · ${m.producer}/${m.dedup_key} · v${m.policy} · ${clock(m.published)}`;
+  $('trace-meta').textContent = `${m.channel} · ${m.producer}/${m.dedup_key} · v${m.policy} · 发布于 ${clock(m.published)} · 详情读取于 ${clock(facts.observed_at)}`;
   $('trace-envelope').textContent = JSON.stringify(m.envelope, null, 2);
   $('trace-deliveries').replaceChildren(...facts.deliveries.map(item => {
     const section = node('section');
@@ -198,6 +263,11 @@ $('recover').addEventListener('click', () => run(async () => {
   await refresh();
 }, $('recover')));
 $('refresh').addEventListener('click', () => run(refresh, $('refresh')));
+$('review-older').addEventListener('click', () => run(olderReview, $('review-older')));
+$('review-latest').addEventListener('click', () => run(async () => {
+  state.review = null;
+  await refresh();
+}, $('review-latest')));
 $('retention-plan').addEventListener('click', () => run(async () => {
   const channel = state.channel;
   const reply = await api(`${channelPath()}/retention`);

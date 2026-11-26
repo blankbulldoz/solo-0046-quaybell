@@ -1,7 +1,8 @@
 class RelayError(Exception):
-    def __init__(self, status, code, message):
+    def __init__(self, status, code, message, details=None):
         super().__init__(message)
         self.status, self.code = status, code
+        self.details = dict(details or {})
 
 
 def invalid(message):
@@ -14,3 +15,7 @@ def missing(message):
 
 def conflict(message):
     return RelayError(409, 'conflict', message)
+
+
+def gone(message, details=None):
+    return RelayError(410, 'pruned', message, details)
