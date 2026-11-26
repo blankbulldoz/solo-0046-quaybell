@@ -87,6 +87,11 @@
       "responsibility": "追加同组后继投递"
     },
     {
+      "id": "correction",
+      "path": "quaybell/correction.py",
+      "responsibility": "死信纠错发布、修订审计与原终败追溯"
+    },
+    {
       "id": "overview",
       "path": "quaybell/overview.py",
       "responsibility": "组状态、队列和近期消息快照"
@@ -421,6 +426,85 @@
         "evidence",
         "inspection",
         "codec"
+      ]
+    },
+    {
+      "id": "correct",
+      "name": "为死信提交纠错发布",
+      "entry": "POST /v1/deliveries/{id}/correct",
+      "success": "修正信封得到独立身份并可从新消息读到原终败、值班员和修订原因",
+      "failure": "非死信投递、原样信封或超过 16 KiB 的修正返回 400 / 409",
+      "verification": "python3 -m examples.walkthrough correct",
+      "steps": [
+        "通过 POST /v1/deliveries/{id}/correct 提交 operator、reason 和修正信封",
+        "修正信封沿用原生产者、生产键和顺序键，内容必须不同",
+        "新消息轨迹含源终败投递与最后尝试，原消息轨迹列出它产生的纠错"
+      ],
+      "module_ids": [
+        "correction",
+        "publication",
+        "deadletters",
+        "inspection",
+        "journal"
+      ]
+    },
+    {
+      "id": "correction_race",
+      "name": "两名值班员修正同一终败",
+      "entry": "POST /v1/deliveries/{id}/correct",
+      "success": "两份修正成为彼此独立的同键后继，按追加顺序进入原组",
+      "failure": "同一值班员改内容再提交返回 409",
+      "verification": "python3 -m examples.walkthrough correction_race",
+      "steps": [
+        "两名值班员先后对同一死信提交不同修正",
+        "每份修正都有独立的纠错记录、消息和投递身份",
+        "两份后继按投递 ID 顺序排在原组队尾，各自可领取"
+      ],
+      "module_ids": [
+        "correction",
+        "redrive",
+        "eligibility",
+        "delivery",
+        "journal"
+      ]
+    },
+    {
+      "id": "correction_lost",
+      "name": "纠错响应丢失后重发",
+      "entry": "POST /v1/deliveries/{id}/correct",
+      "success": "同值班员相同内容的重发读取原纠错且不新增后继",
+      "failure": "相同死亡键但不同修订内容返回 409",
+      "verification": "python3 -m examples.walkthrough correction_lost",
+      "steps": [
+        "值班员提交修正但未收到响应",
+        "按原内容重发，返回 200 与同一个 correction_id",
+        "读快照在重发前后一致，原死信仍只有一条纠错"
+      ],
+      "module_ids": [
+        "correction",
+        "publication",
+        "inspection",
+        "journal"
+      ]
+    },
+    {
+      "id": "correct_order",
+      "name": "修正后继进入原组队尾",
+      "entry": "POST /v1/deliveries/{id}/correct",
+      "success": "修正投递排在同键既有消息之后并按队首规则推进",
+      "failure": "先于修正已成立的原样重投与新纠错各自独立",
+      "verification": "python3 -m examples.walkthrough correct_order",
+      "steps": [
+        "原死信之后还有同键消息等待领取",
+        "纠错后台账显示 appended_after 指向当时队尾投递",
+        "队首处置后修正后继才可领取，其他组原始投递保持可查"
+      ],
+      "module_ids": [
+        "correction",
+        "eligibility",
+        "delivery",
+        "overview",
+        "retention"
       ]
     }
   ],

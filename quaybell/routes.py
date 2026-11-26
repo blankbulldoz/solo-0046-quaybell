@@ -15,7 +15,8 @@ PATTERNS = {
         (CHANNEL + '/groups', 'subscribe'), (GROUP + '/pause', 'pause'),
         (CHANNEL + '/preview', 'preview'), (CHANNEL + '/messages', 'publish'),
         (GROUP + '/claim', 'claim'), (DELIVERY + '/ack', 'ack'), (DELIVERY + '/nack', 'nack'),
-        ('/v1/sweep', 'sweep'), (DELIVERY + '/redrive', 'redrive'), (CHANNEL + '/retention', 'prune'),
+        ('/v1/sweep', 'sweep'), (DELIVERY + '/redrive', 'redrive'), (DELIVERY + '/correct', 'correct'),
+        (CHANNEL + '/retention', 'prune'),
     ),
 }
 ROUTES = {method: [(re.compile(pattern), action) for pattern, action in patterns]

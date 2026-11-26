@@ -1,0 +1,14 @@
+<dialog id="correction" aria-labelledby="correction-title">
+  <div class="dialog-head">
+    <h2 id="correction-title">纠错发布</h2>
+    <form method="dialog"><button class="quiet" aria-label="关闭纠错发布">关闭</button></form>
+  </div>
+  <p class="muted" id="correction-source"></p>
+  <form id="correction-form" class="compact">
+    <label>值班员<input name="operator" required maxlength="64" pattern="[A-Za-z0-9_][A-Za-z0-9_.@-]*" placeholder="night-owl"></label>
+    <label>修订原因<textarea id="correction-reason" name="reason" rows="2" required maxlength="240"></textarea></label>
+    <label>修正信封<textarea id="correction-envelope" name="envelope" rows="8" required></textarea></label>
+    <p class="muted">生产者、生产键和顺序键沿用原消息；修正后的信封得到独立消息身份，并追加到原顺序键队尾。</p>
+    <button>提交修正</button>
+  </form>
+</dialog>

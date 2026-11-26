@@ -207,9 +207,135 @@ def export(client):
     return {'format': record['format'], 'sha256': digest}
 
 
+def correct(client):
+    client.channel(POLICY | {'max_attempts': 1})
+    client.subscribe(tags={'feed': 'samples'})
+    client.subscribe('witness')
+    sent = client.publish()
+    client.settle(client.claim()[0], 'nack')
+    source = client.request(CHANNEL + '/dead')['items'][0]
+    fixed = client.correct(source['id'], 'night-owl', {'payload': {'value': 81, 'unit': 'uV'}})
+    assert fixed['message_id'] != sent['message_id']
+    assert fixed['source']['delivery_id'] == source['id']
+    assert fixed['source']['last_attempt']['outcome'] == 'nacked'
+    assert client.correct(source['id'], 'night-owl', {'payload': {'value': 81, 'unit': 'uV'}},
+                          expected=200) == fixed | {'repeated': True}
+    client.correct(source['id'], 'night-owl', {'payload': {'value': 82}}, expected=409)
+    client.correct(source['id'], 'heron-lead', dict(envelope()), expected=400)
+    client.correct(source['id'], 'heron-lead', {'payload': {'value': 81}, 'tags': {'feed': 'alerts'}},
+                   expected=400)
+    client.correct(source['id'], 'heron-lead', {'payload': {'value': 81}, 'key': 'other-key'},
+                   expected=400)
+    client.correct(sent['fanout']['witness'], 'night-owl', {'payload': {'value': 81}}, expected=409)
+    taken = client.claim()[0]
+    assert taken['delivery_id'] == fixed['delivery_id'] and taken['message_id'] == fixed['message_id']
+    assert taken['envelope']['payload'] == {'value': 81, 'unit': 'uV'}
+    assert taken['policy'] == 1
+    trace = client.request(f"/messages/{fixed['message_id']}")
+    assert trace['correction']['operator'] == 'night-owl'
+    assert trace['correction']['reason'] == '修正解码后的载荷单位'
+    assert trace['correction']['source']['delivery_id'] == source['id']
+    assert trace['correction']['source']['last_attempt']['outcome'] == 'nacked'
+    record = client.request(f"/messages/{sent['message_id']}")
+    assert [event['kind'] for event in record['events']] == ['published', 'leased', 'nacked', 'corrected']
+    assert record['corrections'][0]['message_id'] == fixed['message_id']
+    assert [row['id'] for row in record['deliveries']] == [source['id'], sent['fanout']['witness']]
+    assert record['deliveries'][0]['state'] == 'dead'
+    return {'source': source['id'], 'message': fixed['message_id'], 'delivery': fixed['delivery_id']}
+
+
+def correction_race(client):
+    client.channel(POLICY | {'max_attempts': 1})
+    client.subscribe()
+    client.publish()
+    client.settle(client.claim()[0], 'nack')
+    source = client.request(CHANNEL + '/dead')['items'][0]
+    night = client.correct(source['id'], 'night-owl', {'payload': {'value': 81}})
+    day = client.correct(source['id'], 'heron-lead', {'payload': {'value': 82}},
+                         reason='白班复核后改按整数读数解码')
+    assert len({source['id'], night['message_id'], day['message_id']}) == 3
+    assert night['message_id'] != day['message_id']
+    assert night['delivery_id'] < day['delivery_id']
+    order = [item['id'] for item in client.request(CHANNEL)['groups'][0]['sample']
+             if item['lane'] == 'coil-north']
+    assert order == sorted(order) == [night['delivery_id'], day['delivery_id']]
+    head = client.claim(4)
+    assert [item['delivery_id'] for item in head] == [night['delivery_id']]
+    client.settle(head[0])
+    tail = client.claim(4)
+    assert [item['delivery_id'] for item in tail] == [day['delivery_id']]
+    assert [item['envelope']['payload']['value'] for item in head + tail] == [81, 82]
+    assert client.request(f"/messages/{source['message_id']}")['corrections'] == [
+        {'correction_id': night['correction_id'], 'source_delivery_id': source['id'],
+         'message_id': night['message_id'], 'delivery_id': night['delivery_id'],
+         'operator': 'night-owl', 'reason': '修正解码后的载荷单位', 'created': night['created']},
+        {'correction_id': day['correction_id'], 'source_delivery_id': source['id'],
+         'message_id': day['message_id'], 'delivery_id': day['delivery_id'],
+         'operator': 'heron-lead', 'reason': '白班复核后改按整数读数解码', 'created': day['created']},
+    ]
+    return {'source': source['id'], 'night': night['message_id'], 'day': day['message_id']}
+
+
+def correction_lost(client):
+    client.channel(POLICY | {'max_attempts': 1})
+    client.subscribe()
+    client.publish()
+    client.settle(client.claim()[0], 'nack')
+    source = client.request(CHANNEL + '/dead')['items'][0]
+    request = {'payload': {'value': 81}}
+    first = client.correct(source['id'], 'night-owl', request)
+    before = client.request(f"/messages/{source['message_id']}")
+    again = client.correct(source['id'], 'night-owl', request, expected=200)
+    assert again == first | {'repeated': True}
+    assert again['correction_id'] == first['correction_id']
+    after = client.request(f"/messages/{source['message_id']}")
+    assert after == before and len(after['corrections']) == 1
+    assert client.claim()[0]['delivery_id'] == first['delivery_id']
+    return {'correction': first['correction_id'], 'message': first['message_id'], 'replayed': True}
+
+
+def correct_order(client):
+    client.channel(POLICY | {'max_attempts': 1})
+    client.subscribe()
+    client.subscribe('witness')
+    first = client.publish()
+    tail = client.publish('tail')
+    client.settle(client.claim()[0], 'nack')
+    source = next(row for row in client.request(CHANNEL + '/dead')['items']
+                  if row['message_id'] == first['message_id'])
+    fixed = client.correct(source['id'], 'night-owl', {'payload': {'value': 7}})
+    lane = [item['id'] for item in client.request(CHANNEL)['groups'][0]['sample']
+            if item['lane'] == 'coil-north']
+    assert lane == [tail['fanout']['oscillator'], fixed['delivery_id']]
+    assert fixed['appended_after'] == tail['fanout']['oscillator']
+    held = client.claim()[0]
+    assert held['message_id'] == tail['message_id']
+    assert client.claim() == []
+    client.settle(held)
+    assert client.claim()[0]['message_id'] == fixed['message_id']
+    original = client.request(f"/messages/{first['message_id']}")
+    assert [row['id'] for row in original['deliveries']] == [source['id'], first['fanout']['witness']]
+    assert original['deliveries'][1]['state'] == 'waiting'
+    corrected = client.request(f"/messages/{fixed['message_id']}")
+    assert corrected['message']['producer'] == original['message']['producer']
+    assert corrected['message']['dedup_key'] == original['message']['dedup_key']
+    assert corrected['message']['origin_delivery_id'] == source['id']
+    assert corrected['deliveries'][0]['lane'] == source['lane']
+    assert corrected['correction']['source']['message_id'] == first['message_id']
+    assert corrected['correction']['source']['last_attempt']['reason'] == '下游拒绝校验帧'
+    assert client.request('/channels')['channels'][0]['name'] == 'wire-gate'
+    client.publish(expected=409, payload={'value': 999})
+    assert client.publish(expected=200)['message_id'] == first['message_id']
+    dead = client.request(CHANNEL + '/dead')['items']
+    assert dead[0]['id'] == source['id'] and dead[0]['corrections'][0]['message_id'] == fixed['message_id']
+    return {'tail': tail['message_id'], 'corrected_after': fixed['delivery_id'], 'lane': lane}
+
+
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             redrive=redrive, board=board, retention=retention, export=export, correct=correct,
+             correction_race=correction_race, correction_lost=correction_lost,
+             correct_order=correct_order)
 
 
 def main():

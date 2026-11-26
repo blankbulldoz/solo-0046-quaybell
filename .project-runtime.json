@@ -73,6 +73,22 @@
     {
       "workflow_id": "export",
       "command": "python3 -m examples.walkthrough export"
+    },
+    {
+      "workflow_id": "correct",
+      "command": "python3 -m examples.walkthrough correct"
+    },
+    {
+      "workflow_id": "correction_race",
+      "command": "python3 -m examples.walkthrough correction_race"
+    },
+    {
+      "workflow_id": "correction_lost",
+      "command": "python3 -m examples.walkthrough correction_lost"
+    },
+    {
+      "workflow_id": "correct_order",
+      "command": "python3 -m examples.walkthrough correct_order"
     }
   ]
 }

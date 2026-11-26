@@ -54,6 +54,13 @@ class Session:
             data['reason'] = '下游拒绝校验帧'
         return self.request(f"/deliveries/{item['delivery_id']}/{mode}", data, expected)
 
+    def correct(self, delivery_id, operator, envelope, reason='修正解码后的载荷单位', expected=201):
+        return self.request(f'/deliveries/{delivery_id}/correct',
+                            {'operator': operator, 'reason': reason, 'envelope': envelope}, expected)
+
+    def redrive(self, delivery_id, expected=201):
+        return self.request(f'/deliveries/{delivery_id}/redrive', {}, expected)
+
 
 def envelope(key='signal-1', lane='coil-north', **extra):
     return dict(producer='signal-source', key=key, lane=lane, payload={'value': 18},

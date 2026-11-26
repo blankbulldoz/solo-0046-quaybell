@@ -4,11 +4,18 @@ from .errors import invalid
 
 NAME = re.compile(r'[a-z][a-z0-9-]{0,47}\Z')
 TOKEN = re.compile(r'[A-Za-z0-9_./:-]{1,96}\Z')
+OPERATOR = re.compile(r'[A-Za-z0-9_][A-Za-z0-9_.@-]{0,63}\Z')
 
 
 def name(value, label):
     if not isinstance(value, str) or not NAME.fullmatch(value):
         raise invalid(f'{label}须以小写字母起头，最多 48 个小写字母、数字或短横线')
+    return value
+
+
+def operator(value, label):
+    if not isinstance(value, str) or not OPERATOR.fullmatch(value):
+        raise invalid(f'{label}须为 1～64 个字母、数字或 _ . @ -')
     return value
 
 

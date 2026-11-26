@@ -33,11 +33,14 @@ python3 -m quaybell --demo
 | `/sweep` | POST | `{}` 或 `limit`，按原截止时间回收全局租约 |
 | `/channels/{channel}/dead` | GET | 最近 50 个失败投递及最后一次尝试 |
 | `/deliveries/{id}/redrive` | POST | `{}`，使用当前策略追加一个后继投递 |
-| `/messages/{id}` | GET | 信封、分发、尝试、消息级处理记录 |
+| `/deliveries/{id}/correct` | POST | `operator`、`reason` 和 `envelope`（`payload` 必填，`tags`/`delay_seconds` 可选），为死信追加一份修正后的独立消息与投递 |
+| `/messages/{id}` | GET | 信封、分发、尝试、消息级处理记录，以及该消息的纠错来源和它产生的纠错 |
 | `/messages/{id}/evidence` | GET | `quaybell-trace/1` JSON 下载，摘要针对除 `sha256` 之外的规范化内容 |
 | `/channels/{channel}/retention` | GET / POST | 候选复核，或以 `{}` / `limit` 清理实际合格项 |
 
 默认策略是 `lease_seconds=24`、`retry_seconds=3`、`max_attempts=3`、`retention_seconds=3600`。重发原生产键时复用初始匹配结果，内容变化则返回 409。如果应用侧副作用必须去重，应按消息和消费组身份设计处理键。重投需要按其业务语义明确将后继身份识别为有意重新处理。
+
+死信载荷写错时不要原样重投，改用 `POST /deliveries/{id}/correct`。修正信封沿用原消息的生产者、生产键和顺序键，只替换载荷（可选调整标签和延迟），内容须与原信封不同。修正后的信封获得独立的消息和投递身份，按当前策略加入原顺序键队尾，并与原消息共享生产键谱系；读取新消息可见原终败投递、最后尝试、提出修正的值班员和修订原因，原消息轨迹则列出它派生出的纠错。同一值班员对同一死信只有一份修正：相同内容重发返回原纠错（200，`repeated`），不同内容返回 409；不同值班员可各自提交，各自成为独立的同键后继，按追加顺序进入原组。其他消费组的原始投递与记录不受影响。
 
 以下载荷可发布到示例频道。默认延迟为零。
 
@@ -52,6 +55,10 @@ python3 -m compileall -q quaybell examples
 python3 -m examples.walkthrough claim
 python3 -m examples.walkthrough retention
 python3 -m examples.walkthrough export
+python3 -m examples.walkthrough correct
+python3 -m examples.walkthrough correction_race
+python3 -m examples.walkthrough correction_lost
+python3 -m examples.walkthrough correct_order
 ```
 
 每个工作流示例使用临时 SQLite 文件、受控时钟和本机随机端口，运行完即释放。可用 `python3 -m examples.walkthrough --help` 列出所有工作流。正式测试套件延后建设。

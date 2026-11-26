@@ -1,4 +1,5 @@
-VERSION = 1
+VERSION = 2
+
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS channels (
   name TEXT PRIMARY KEY,
@@ -34,8 +35,8 @@ CREATE TABLE IF NOT EXISTS messages (
   policy INTEGER NOT NULL,
   published REAL NOT NULL,
   available REAL NOT NULL,
-  FOREIGN KEY(channel, policy) REFERENCES policies(channel, version),
-  UNIQUE(channel, producer, dedup_key)
+  origin_delivery_id INTEGER,
+  FOREIGN KEY(channel, policy) REFERENCES policies(channel, version)
 );
 CREATE TABLE IF NOT EXISTS deliveries (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,6 +64,24 @@ CREATE TABLE IF NOT EXISTS attempts (
   receipt TEXT,
   UNIQUE(delivery_id, number)
 );
+CREATE TABLE IF NOT EXISTS corrections (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  channel TEXT NOT NULL REFERENCES channels(name),
+  source_delivery_id INTEGER NOT NULL,
+  source_message_id INTEGER NOT NULL,
+  source_group TEXT NOT NULL,
+  source_lane TEXT NOT NULL,
+  source_state TEXT NOT NULL,
+  source_attempt TEXT,
+  appended_after INTEGER,
+  message_id INTEGER NOT NULL UNIQUE REFERENCES messages(id) ON DELETE CASCADE,
+  delivery_id INTEGER NOT NULL UNIQUE REFERENCES deliveries(id) ON DELETE CASCADE,
+  operator TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  policy INTEGER NOT NULL,
+  created REAL NOT NULL,
+  UNIQUE(source_delivery_id, operator)
+);
 CREATE TABLE IF NOT EXISTS journal (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   channel TEXT NOT NULL REFERENCES channels(name),
@@ -77,5 +96,62 @@ CREATE INDEX IF NOT EXISTS delivery_origin ON deliveries(message_id,id);
 CREATE INDEX IF NOT EXISTS attempt_deadline ON attempts(expires,id) WHERE outcome='open';
 CREATE UNIQUE INDEX IF NOT EXISTS one_open_attempt ON attempts(delivery_id) WHERE outcome='open';
 CREATE INDEX IF NOT EXISTS message_channel ON messages(channel,published,id);
+CREATE UNIQUE INDEX IF NOT EXISTS one_original_key ON messages(channel,producer,dedup_key)
+  WHERE origin_delivery_id IS NULL;
+CREATE INDEX IF NOT EXISTS message_origin ON messages(origin_delivery_id)
+  WHERE origin_delivery_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS correction_source ON corrections(source_message_id,id);
+CREATE INDEX IF NOT EXISTS correction_target ON corrections(source_delivery_id,id);
 CREATE INDEX IF NOT EXISTS journal_message ON journal(message_id,id);
 '''
+
+# 1 -> 2: a corrected message keeps the source producer key but takes its own
+# identity, so the production-key uniqueness of ordinary publications becomes a
+# partial index and a corrections ledger records the terminal failure it answers.
+MIGRATIONS = {
+    1: '''
+CREATE TABLE messages_v2 (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  channel TEXT NOT NULL,
+  producer TEXT NOT NULL,
+  dedup_key TEXT NOT NULL,
+  lane TEXT NOT NULL,
+  envelope TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  policy INTEGER NOT NULL,
+  published REAL NOT NULL,
+  available REAL NOT NULL,
+  origin_delivery_id INTEGER,
+  FOREIGN KEY(channel, policy) REFERENCES policies(channel, version)
+);
+INSERT INTO messages_v2(id,channel,producer,dedup_key,lane,envelope,fingerprint,policy,published,available,origin_delivery_id)
+  SELECT id,channel,producer,dedup_key,lane,envelope,fingerprint,policy,published,available,NULL FROM messages;
+DROP TABLE messages;
+ALTER TABLE messages_v2 RENAME TO messages;
+CREATE INDEX message_channel ON messages(channel,published,id);
+CREATE UNIQUE INDEX one_original_key ON messages(channel,producer,dedup_key)
+  WHERE origin_delivery_id IS NULL;
+CREATE INDEX message_origin ON messages(origin_delivery_id)
+  WHERE origin_delivery_id IS NOT NULL;
+CREATE TABLE corrections (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  channel TEXT NOT NULL REFERENCES channels(name),
+  source_delivery_id INTEGER NOT NULL,
+  source_message_id INTEGER NOT NULL,
+  source_group TEXT NOT NULL,
+  source_lane TEXT NOT NULL,
+  source_state TEXT NOT NULL,
+  source_attempt TEXT,
+  appended_after INTEGER,
+  message_id INTEGER NOT NULL UNIQUE REFERENCES messages(id) ON DELETE CASCADE,
+  delivery_id INTEGER NOT NULL UNIQUE REFERENCES deliveries(id) ON DELETE CASCADE,
+  operator TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  policy INTEGER NOT NULL,
+  created REAL NOT NULL,
+  UNIQUE(source_delivery_id, operator)
+);
+CREATE INDEX correction_source ON corrections(source_message_id,id);
+CREATE INDEX correction_target ON corrections(source_delivery_id,id);
+''',
+}

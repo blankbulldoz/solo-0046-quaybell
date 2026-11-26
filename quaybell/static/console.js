@@ -85,14 +85,26 @@ function render() {
     `v${item.policy}`, clock(item.published)]), 5, '当前频道没有消息');
   const dead = board?.dead || [];
   $('dead-total').textContent = dead.length ? `最近 ${dead.length} 条` : '';
-  rows('dead-rows', dead.map(item => [traceLink(item.message_id, `#${item.id}`), item.group_name,
-    item.last_attempt.reason, item.redriven_as ? `已追加 #${item.redriven_as}` :
-      button('重投', async () => {
-        const result = await api(`/deliveries/${item.id}/redrive`, {});
-        notice(`重投记录 #${result.delivery_id}`);
-        resetRetention();
-        await refresh();
-      })]), 4, '当前频道没有死信');
+  rows('dead-rows', dead.map(item => {
+    const actions = node('div', '', 'button-row');
+    const corrections = item.corrections || [];
+    if (item.redriven_as) actions.append(node('span', `已追加 #${item.redriven_as}`, 'muted'));
+    else actions.append(button('重投', async () => {
+      const result = await api(`/deliveries/${item.id}/redrive`, {});
+      notice(`重投记录 #${result.delivery_id}`);
+      resetRetention();
+      await refresh();
+    }));
+    if (corrections.length) {
+      actions.append(node('span', corrections.map(c => `纠错 #${c.delivery_id}（${c.operator}）`).join('、'),
+        'muted wrap'));
+    }
+    actions.append(button('纠错发布', async () => {
+      const facts = await api(`/messages/${item.message_id}`);
+      openCorrection(item, facts.message.envelope);
+    }, {className: 'quiet'}));
+    return [traceLink(item.message_id, `#${item.id}`), item.group_name, item.last_attempt.reason, actions];
+  }), 4, '当前频道没有死信');
   renderLeases();
 }
 
@@ -127,6 +139,23 @@ async function trace(id) {
   const m = facts.message;
   $('trace-meta').textContent = `${m.channel} · ${m.producer}/${m.dedup_key} · v${m.policy} · ${clock(m.published)}`;
   $('trace-envelope').textContent = JSON.stringify(m.envelope, null, 2);
+  const correction = facts.correction;
+  $('trace-correction').hidden = !correction;
+  if (correction) {
+    $('trace-correction').replaceChildren(
+      node('p', `源投递 #${correction.source.delivery_id} · ${correction.source.group_name} · ${TEXT[correction.source.state]}${correction.source.pruned ? '（源已清理）' : ''}`),
+      node('p', `提出 ${correction.operator} · ${clock(correction.created)}`, 'muted'),
+      node('p', `原因 ${correction.reason}`, 'muted'),
+      node('p', correction.source.last_attempt
+        ? `原终败：第 ${correction.source.last_attempt.number} 次 ${TEXT[correction.source.last_attempt.outcome]} · ${correction.source.last_attempt.reason}`
+        : '原终败：没有留下尝试记录', 'muted'));
+  }
+  const answered = facts.corrections || [];
+  $('trace-corrected').hidden = !answered.length;
+  if (answered.length) {
+    $('trace-corrected').replaceChildren(...answered.map(item => node('p',
+      `纠错消息 #${item.message_id} · 投递 #${item.delivery_id} · ${item.operator} · ${item.reason} · ${clock(item.created)}`)));
+  }
   $('trace-deliveries').replaceChildren(...facts.deliveries.map(item => {
     const section = node('section');
     const label = node('h4', `#${item.id} · ${item.group_name} · v${item.policy} `);
@@ -144,6 +173,34 @@ async function trace(id) {
   $('trace-export').href = `/v1/messages/${id}/evidence`;
   $('trace').showModal();
 }
+
+async function openCorrection(item, shape) {
+  const source = item.last_attempt;
+  $('correction-title').textContent = `纠错发布 · 源投递 #${item.id}`;
+  $('correction-source').textContent =
+    `${item.group_name} · ${item.lane} · ${TEXT[item.state]} · 第 ${source.number} 次 ${source.worker} · ${source.reason}`;
+  $('correction-form').dataset.source = item.id;
+  $('correction-envelope').value = JSON.stringify({
+    payload: shape.payload, tags: shape.tags, delay_seconds: shape.delay_seconds,
+  }, null, 2);
+  $('correction-reason').value = `修正源投递 #${item.id} 的失败载荷`;
+  $('correction').showModal();
+}
+
+$('correction-form').addEventListener('submit', event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  run(async () => {
+    const values = Object.fromEntries(new FormData(form));
+    const result = await api(`/deliveries/${form.dataset.source}/correct`, {
+      operator: values.operator, reason: values.reason,
+      envelope: parse(values.envelope, '修正信封'),
+    });
+    $('correction').close();
+    notice(result.repeated ? `已读取纠错 #${result.correction_id}` : `纠错消息 #${result.message_id} · 投递 #${result.delivery_id}`);
+    await refresh();
+  }, event.submitter);
+});
 
 onForm('create-channel', async ({name}) => {
   await api('/channels', {name});
