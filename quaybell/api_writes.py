@@ -24,6 +24,8 @@ def write(db, action, args, raw, now):
         inputs.require(raw, ())
         item = redrive.redrive(db, int(args[0]), now)
         return Reply(item, 200 if item['repeated'] else 201)
+    if action == 'redrive_confirm':
+        return Reply(redrive.confirm(db, args[0], raw, now))
     if action == 'prune':
         return Reply(retention.prune(db, *args, raw, now))
     raise AssertionError(action)

@@ -63,6 +63,10 @@
       "command": "python3 -m examples.walkthrough redrive"
     },
     {
+      "workflow_id": "batch_redrive",
+      "command": "python3 -m examples.walkthrough batch_redrive"
+    },
+    {
       "workflow_id": "board",
       "command": "python3 -m examples.walkthrough board"
     },

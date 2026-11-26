@@ -165,6 +165,69 @@ def redrive(client):
     return new
 
 
+def _kill_lane_pair(client):
+    client.channel(POLICY | {'max_attempts': 1})
+    client.subscribe()
+    first = client.publish('lane-first')
+    second = client.publish('lane-second')
+    client.settle(client.claim()[0], 'nack')
+    client.settle(client.claim()[0], 'nack')
+    rows = client.request(CHANNEL + '/dead')['items']
+    ids = [row['id'] for row in rows]
+    assert rows[0]['lane'] == rows[1]['lane'] == 'coil-north'
+    assert {first['fanout']['oscillator'], second['fanout']['oscillator']} <= set(ids)
+    return rows
+
+
+def batch_redrive(client):
+    rows = _kill_lane_pair(client)
+    ids = [row['id'] for row in rows[:2]]
+    client.request(CHANNEL + '/redrive-preview', {}, 400)
+    client.request(CHANNEL + '/redrive-preview', {'delivery_ids': [ids[0], ids[0]]}, 400)
+    client.request(CHANNEL + '/redrive-preview', {'delivery_ids': [99999]}, 404)
+    # 预览：两条同顺序键死信都仍可重投，并汇总将影响的消费组
+    preview = client.request(CHANNEL + '/redrive-preview', {'delivery_ids': ids})
+    assert preview['policy_version'] == 1
+    assert preview['counts'] == {'eligible': 2, 'already_redriven': 0}
+    assert preview['affected_groups'] == [{'group': 'oscillator', 'total': 2, 'eligible': 2}]
+    # 预览之后，值班同事先把其中一条重投掉
+    stolen = client.request(f'/deliveries/{ids[0]}/redrive', {}, 201)
+    changed = client.request(CHANNEL + '/redrive-preview', {'delivery_ids': ids})
+    assert changed['counts'] == {'eligible': 1, 'already_redriven': 1}
+    # 确认之前策略修订到 v2：持有旧版号确认时整体不写入，分类逐项说明留下原因
+    client.request(CHANNEL + '/policy', POLICY | {'expected': 1, 'lease_seconds': 12}, 201)
+    stale = client.request(CHANNEL + '/redrive-confirm', {'delivery_ids': ids, 'expected': 1})
+    by_id = {item['delivery_id']: item for item in stale['items']}
+    assert stale['counts'] == {'redriven': 0, 'already_redriven': 1, 'stale_policy': 1}
+    assert by_id[ids[0]]['state'] == 'already_redriven'
+    assert by_id[ids[0]]['successor_id'] == stolen['delivery_id']
+    assert by_id[ids[1]]['state'] == 'stale_policy' and by_id[ids[1]]['successor_id'] is None
+    # 重新预览后按当前 v2 确认：实际只提交仍可重投的那一条
+    reviewed = client.request(CHANNEL + '/redrive-preview', {'delivery_ids': ids})
+    assert reviewed['counts'] == {'eligible': 1, 'already_redriven': 1}
+    submitted = client.request(CHANNEL + '/redrive-confirm', {'delivery_ids': ids, 'expected': 2})
+    final = {item['delivery_id']: item for item in submitted['items']}
+    assert submitted['counts'] == {'redriven': 1, 'already_redriven': 1, 'stale_policy': 0}
+    assert final[ids[0]]['state'] == 'already_redriven'
+    assert final[ids[0]]['successor_id'] == stolen['delivery_id']
+    assert final[ids[1]]['state'] == 'redriven' and final[ids[1]]['policy'] == 2
+    new_successor = final[ids[1]]['successor_id']
+    # 已成功重投的源不能再造新后继：重复确认仍定位同一个后继
+    repeated = client.request(CHANNEL + '/redrive-confirm', {'delivery_ids': ids, 'expected': 2})
+    assert repeated['counts'] == {'redriven': 0, 'already_redriven': 2, 'stale_policy': 0}
+    again = {item['delivery_id']: item for item in repeated['items']}
+    assert again[ids[0]]['successor_id'] == stolen['delivery_id']
+    assert again[ids[1]]['successor_id'] == new_successor
+    # 同顺序键队尾：先产生的后继是队首并保留 v1，确认产生的后继排在其后并绑定 v2
+    head = client.claim()[0]
+    assert head['delivery_id'] == stolen['delivery_id'] and head['policy'] == 1
+    client.settle(head)
+    tail = client.claim()[0]
+    assert tail['delivery_id'] == new_successor and tail['policy'] == 2
+    return {'preview': preview['counts'], 'stale_confirm': stale['counts'],
+            'submitted': submitted['counts'], 'repeated': repeated['counts']}
+
+
 def board(client):
     client.channel()
     client.subscribe()
@@ -209,7 +272,7 @@ def export(client):
 
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             redrive=redrive, batch_redrive=batch_redrive, board=board, retention=retention, export=export)
 
 
 def main():

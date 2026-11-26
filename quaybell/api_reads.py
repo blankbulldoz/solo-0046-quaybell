@@ -1,4 +1,4 @@
-from . import catalog, deadletters, evidence, inspection, overview, retention, routing
+from . import catalog, deadletters, evidence, inspection, overview, redrive, retention, routing
 from .protocol import Reply
 
 
@@ -22,3 +22,7 @@ def read(db, action, args, now):
 
 def check_route(db, channel, raw):
     return Reply(routing.preview(db, channel, raw))
+
+
+def redrive_preview(db, channel, raw, now):
+    return Reply(redrive.preview(db, channel, raw, now))

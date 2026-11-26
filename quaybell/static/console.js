@@ -1,6 +1,7 @@
 import {$, TEXT, api, button, clock, node, notice, onForm, parse, rows, run, status} from './relay.js';
 
-const state = {channel: null, group: null, board: null, sequence: 0, retention: null, leases: new Map()};
+const state = {channel: null, group: null, board: null, sequence: 0, retention: null,
+  leases: new Map(), redrivePick: new Set(), redrivePreview: null};
 const policyFields = ['lease_seconds', 'retry_seconds', 'max_attempts', 'retention_seconds'];
 const group = () => state.board?.groups.find(item => item.name === state.group);
 const channelPath = () => `/channels/${state.channel}`;
@@ -28,6 +29,8 @@ async function choose(channel) {
     state.channel = channel;
     state.group = null;
     state.board = null;
+    state.redrivePick.clear();
+    state.redrivePreview = null;
     $('publication-result').textContent = '';
     resetRetention();
   }
@@ -85,15 +88,102 @@ function render() {
     `v${item.policy}`, clock(item.published)]), 5, '当前频道没有消息');
   const dead = board?.dead || [];
   $('dead-total').textContent = dead.length ? `最近 ${dead.length} 条` : '';
-  rows('dead-rows', dead.map(item => [traceLink(item.message_id, `#${item.id}`), item.group_name,
-    item.last_attempt.reason, item.redriven_as ? `已追加 #${item.redriven_as}` :
-      button('重投', async () => {
-        const result = await api(`/deliveries/${item.id}/redrive`, {});
-        notice(`重投记录 #${result.delivery_id}`);
-        resetRetention();
-        await refresh();
-      })]), 4, '当前频道没有死信');
+  const selectable = new Set(dead.filter(item => !item.redriven_as).map(item => item.id));
+  for (const id of state.redrivePick) if (!selectable.has(id)) state.redrivePick.delete(id);
+  rows('dead-rows', dead.map(item => {
+    const pick = node('input');
+    pick.type = 'checkbox';
+    pick.checked = state.redrivePick.has(item.id);
+    pick.disabled = Boolean(item.redriven_as);
+    pick.setAttribute('aria-label', `选择死信 #${item.id}`);
+    pick.addEventListener('change', () => {
+      if (pick.checked) state.redrivePick.add(item.id);
+      else state.redrivePick.delete(item.id);
+      syncDeadControls(selectable);
+    });
+    return [pick, traceLink(item.message_id, `#${item.id}`), item.group_name,
+      item.last_attempt.reason, item.redriven_as ? `已追加 #${item.redriven_as}` :
+        button('重投', async () => {
+          const result = await api(`/deliveries/${item.id}/redrive`, {});
+          notice(`重投记录 #${result.delivery_id}`);
+          resetRetention();
+          await refresh();
+        })];
+  }), 5, '当前频道没有死信');
+  syncDeadControls(selectable);
   renderLeases();
+}
+
+function syncDeadControls(selectable) {
+  const all = $('dead-all');
+  const picked = state.redrivePick.size;
+  all.checked = selectable.size > 0 && picked === selectable.size;
+  all.indeterminate = picked > 0 && picked < selectable.size;
+  $('dead-batch').disabled = picked === 0;
+  $('dead-batch').textContent = picked ? `集中重投预览（${picked}）` : '集中重投预览';
+}
+
+function redriveStatus(value) {
+  const span = status(value);
+  span.textContent = TEXT[value] || value;
+  return span;
+}
+
+function redriveRows(reply) {
+  $('redrive-rows').replaceChildren(...reply.items.map(item => {
+    const row = node('tr');
+    row.append(node('td', `#${item.delivery_id}`), node('td', item.group_name), node('td', item.lane),
+      node('td', item.last_reason ?? '—'),
+      node('td', item.current_policy == null ? `v${item.source_policy}` : `v${item.source_policy} → v${item.current_policy}`),
+      redriveStatus(item.state),
+      node('td', item.successor_id == null ? '—' : `#${item.successor_id}`));
+    return row;
+  }));
+}
+
+async function openRedrivePreview() {
+  const ids = [...state.redrivePick];
+  if (!ids.length) return;
+  const reply = await api(`${channelPath()}/redrive-preview`, {delivery_ids: ids});
+  state.redrivePreview = reply;
+  renderRedriveDialog(reply);
+  $('redrive').showModal();
+}
+
+function renderRedriveDialog(reply) {
+  const groups = reply.affected_groups.map(g => `${g.group}（${g.eligible}/${g.total} 可重投）`).join('、') || '—';
+  $('redrive-meta').textContent =
+    `观测于 ${clock(reply.observed_at)} · 当前策略 v${reply.policy_version} · 可重投 ${reply.counts.eligible ?? 0} 条 · 已被重投 ${reply.counts.already_redriven ?? 0} 条`;
+  $('redrive-groups').textContent = `影响消费组：${groups}`;
+  $('redrive-result').textContent = '';
+  redriveRows(reply);
+  const button = $('redrive-confirm-btn');
+  button.disabled = (reply.counts.eligible ?? 0) === 0;
+  button.textContent = `按 v${reply.policy_version} 确认重投`;
+}
+
+async function confirmRedrive() {
+  const preview = state.redrivePreview;
+  if (!preview) return;
+  const reply = await api(`${channelPath()}/redrive-confirm`, {
+    delivery_ids: preview.items.map(item => item.delivery_id), expected: preview.policy_version,
+  });
+  state.redrivePreview = reply;
+  redriveRows(reply);
+  $('redrive-meta').textContent =
+    `提交于 ${clock(reply.observed_at)} · 预期策略 v${reply.expected_version} · 当前策略 v${reply.policy_version}`;
+  const counts = reply.counts;
+  $('redrive-result').textContent =
+    `实际提交 ${counts.redriven} 条；留下 ${counts.already_redriven + counts.stale_policy} 条` +
+    `（已被别人重投 ${counts.already_redriven} 条、条件变化需要重审 ${counts.stale_policy} 条）`;
+  const groups = reply.affected_groups || [];
+  $('redrive-groups').textContent = groups.length
+    ? `影响消费组：${groups.map(g => `${g.group}（已重投 ${g.redriven ?? 0}/${g.total} 条）`).join('、')}`
+    : '';
+  $('redrive-confirm-btn').disabled = true;
+  notice('集中重投已提交，请在结果区核对提交与留下的部分');
+  for (const item of reply.items) state.redrivePick.delete(item.delivery_id);
+  await refresh();
 }
 
 function renderLeases() {
@@ -215,5 +305,21 @@ $('retention-apply').addEventListener('click', () => run(async () => {
   notice(`已清理 ${reply.removed.length} 条消息`);
   await refresh();
 }));
+$('dead-all').addEventListener('change', () => run(async () => {
+  const dead = state.board?.dead || [];
+  state.redrivePick = new Set($('dead-all').checked
+    ? dead.filter(item => !item.redriven_as).map(item => item.id) : []);
+  await refresh();
+}));
+$('dead-batch').addEventListener('click', () => run(openRedrivePreview, $('dead-batch')));
+$('redrive-rereview').addEventListener('click', () => run(async () => {
+  const preview = state.redrivePreview;
+  if (!preview) return;
+  const reply = await api(`${channelPath()}/redrive-preview`,
+    {delivery_ids: preview.items.map(item => item.delivery_id)});
+  state.redrivePreview = reply;
+  renderRedriveDialog(reply);
+}, $('redrive-rereview')));
+$('redrive-confirm-btn').addEventListener('click', () => run(confirmRedrive, $('redrive-confirm-btn')));
 render();
 run(refresh);

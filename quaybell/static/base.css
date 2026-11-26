@@ -103,6 +103,13 @@ td.wrap { white-space: normal; min-width: 115px; overflow-wrap: anywhere; }
 .status[data-state="blocked"], .status[data-state="delayed"] { color: #714b16; background: #fff0db; }
 .status[data-state="expired"], .status[data-state="dead"], .status[data-state="nacked"] { color: #852620; background: #fbe9e6; }
 .status[data-state="leased"], .status[data-state="open"] { color: #225382; background: #e9f0f8; }
+.status[data-state="eligible"], .status[data-state="redriven_result"], .status[data-state="redriven"] { color: #15583e; background: #e4f2e9; }
+.status[data-state="already_redriven"] { color: #225382; background: #e9f0f8; }
+.status[data-state="stale_policy"] { color: #714b16; background: #fff0db; }
+.inline-check { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.inline-check input { width: auto; }
+#redrive-result { display: block; margin: 10px 0; }
+#redrive .button-row { margin-top: 10px; justify-content: flex-end; }
 .tools { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .tools > h2 { padding: 12px 13px; margin: 0; }
 .tools details { padding: 10px 12px; border-top: 1px solid var(--line); }

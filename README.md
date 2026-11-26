@@ -33,11 +33,15 @@ python3 -m quaybell --demo
 | `/sweep` | POST | `{}` 或 `limit`，按原截止时间回收全局租约 |
 | `/channels/{channel}/dead` | GET | 最近 50 个失败投递及最后一次尝试 |
 | `/deliveries/{id}/redrive` | POST | `{}`，使用当前策略追加一个后继投递 |
+| `/channels/{channel}/redrive-preview` | POST | `delivery_ids` 批量预查，按组汇总并区分仍可重投与已被别人重投 |
+| `/channels/{channel}/redrive-confirm` | POST | `delivery_ids` 和预期策略版号 `expected`，按当前条件确认一批 |
 | `/messages/{id}` | GET | 信封、分发、尝试、消息级处理记录 |
 | `/messages/{id}/evidence` | GET | `quaybell-trace/1` JSON 下载，摘要针对除 `sha256` 之外的规范化内容 |
 | `/channels/{channel}/retention` | GET / POST | 候选复核，或以 `{}` / `limit` 清理实际合格项 |
 
 默认策略是 `lease_seconds=24`、`retry_seconds=3`、`max_attempts=3`、`retention_seconds=3600`。重发原生产键时复用初始匹配结果，内容变化则返回 409。如果应用侧副作用必须去重，应按消息和消费组身份设计处理键。重投需要按其业务语义明确将后继身份识别为有意重新处理。
+
+集中处理死信时先在死信表勾选并打开确认页：预查会列出每个候选影响的消费组，并把每条死信分为「仍可重投」和「已被别人重投」。确认请求携带预查时的策略版号 `expected`，服务端在同一写事务内逐条复核：已经有后继的仍定位原后继，策略在预查后被修订的归为「条件变化需要重审」而不写入，其余按当前策略追加后继。返回的 `counts` 与逐条结果说明实际提交了哪部分、留下了哪部分；每条死信至多有一个直接后继，重复确认不会再造新后继。
 
 以下载荷可发布到示例频道。默认延迟为零。
 
@@ -50,6 +54,8 @@ python3 -m quaybell --demo
 ```sh
 python3 -m compileall -q quaybell examples
 python3 -m examples.walkthrough claim
+python3 -m examples.walkthrough redrive
+python3 -m examples.walkthrough batch_redrive
 python3 -m examples.walkthrough retention
 python3 -m examples.walkthrough export
 ```

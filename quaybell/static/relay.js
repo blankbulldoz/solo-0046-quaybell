@@ -4,6 +4,8 @@ export const TEXT = {
   leased: '租约中', expired: '租约超时', acked: '已确认', nacked: '已拒绝',
   waiting: '等待中', dead: '死信', open: '未应答', leased_event: '发放租约',
   published: '已发布', redriven: '重投',
+  eligible: '仍可重投', already_redriven: '已被别人重投', stale_policy: '条件变化需要重审',
+  redriven_result: '本次已重投',
 };
 
 export async function api(path, data) {

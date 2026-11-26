@@ -18,7 +18,7 @@ def serve(path):
     if path == '/':
         page = Template(fragment('shell')).substitute(
             channels=fragment('channels'), queue=fragment('queue'),
-            tools=fragment('tools'), trace=fragment('trace'))
+            tools=fragment('tools'), trace=fragment('trace'), redrive=fragment('redrive'))
         return Reply(page.encode('utf-8'), content_type='text/html; charset=utf-8')
     if path in STATIC:
         return Reply((ASSETS / path[1:]).read_bytes(), content_type=STATIC[path])

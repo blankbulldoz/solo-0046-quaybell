@@ -71,7 +71,10 @@ class RelayRequest(BaseHTTPRequestHandler):
             with self.server.persistence.session() as db:
                 return api_reads.read(db, action, args, self.server.clock())
         raw = protocol.receive(self)
-        with self.server.persistence.session(write=action != 'preview') as db:
+        read_only = action == 'preview' or action == 'redrive_preview'
+        with self.server.persistence.session(write=not read_only) as db:
             if action == 'preview':
                 return api_reads.check_route(db, args[0], raw)
+            if action == 'redrive_preview':
+                return api_reads.redrive_preview(db, args[0], raw, self.server.clock())
             return api_writes.write(db, action, args, raw, self.server.clock())

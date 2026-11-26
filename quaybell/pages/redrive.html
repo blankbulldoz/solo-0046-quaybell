@@ -1,0 +1,17 @@
+<dialog id="redrive" aria-labelledby="redrive-title">
+  <div class="dialog-head">
+    <h2 id="redrive-title">集中重投确认</h2>
+    <form method="dialog"><button class="quiet" aria-label="关闭集中重投确认">关闭</button></form>
+  </div>
+  <p class="muted" id="redrive-meta"></p>
+  <p class="muted" id="redrive-groups"></p>
+  <div class="scroll"><table>
+    <thead><tr><th scope="col">原投递</th><th scope="col">消费组</th><th scope="col">顺序键</th><th scope="col">最后原因</th><th scope="col">策略</th><th scope="col">分类</th><th scope="col">后继</th></tr></thead>
+    <tbody id="redrive-rows"></tbody>
+  </table></div>
+  <output class="muted" id="redrive-result" aria-live="polite"></output>
+  <div class="button-row">
+    <button type="button" id="redrive-rereview" class="quiet">重新预览</button>
+    <button type="button" id="redrive-confirm-btn">按当前条件确认重投</button>
+  </div>
+</dialog>
