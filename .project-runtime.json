@@ -43,6 +43,10 @@
       "command": "python3 -m examples.walkthrough claim"
     },
     {
+      "workflow_id": "wait",
+      "command": "python3 -m examples.walkthrough wait"
+    },
+    {
       "workflow_id": "ack",
       "command": "python3 -m examples.walkthrough ack"
     },

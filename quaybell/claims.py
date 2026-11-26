@@ -2,7 +2,9 @@ from . import attempts, delivery, eligibility, expiry, inputs, journal, policy, 
 
 
 def claim(db, channel, group, raw, now):
-    inputs.require(raw, ('worker',), ('limit',))
+    from .waiting import WAIT_FIELDS
+
+    inputs.require(raw, ('worker',), ('limit', *WAIT_FIELDS))
     worker = inputs.name(raw['worker'], '工作进程')
     limit = inputs.integer(raw.get('limit', 1), 1, 30, '领取上限')
     sub = subscriptions.get(db, channel, group)
@@ -20,3 +22,10 @@ def claim(db, channel, group, raw, now):
         results.append(dict(delivery_id=item['id'], message_id=message['id'], lane=item['lane'],
                             policy=item['policy'], lease=lease, envelope=message['envelope']))
     return {'paused': False, 'items': results}
+
+
+def wait_for_claim(persistence, channel, group, raw, clock, hub=None, wait_seconds=None):
+    from .waiting import wait_for_claim as execute
+
+    return execute(persistence, channel, group, raw, clock,
+                   hub=hub, wait_seconds=wait_seconds)

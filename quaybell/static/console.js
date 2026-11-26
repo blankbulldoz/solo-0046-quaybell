@@ -171,10 +171,12 @@ onForm('publish', async (values, mode) => {
     : `消息 #${reply.message_id} · ${reply.repeated ? '已复用原回执' : '已发布'} · ${Object.keys(reply.fanout).length} 个消费组`;
   if (mode !== 'preview') await refresh();
 });
-onForm('claim', async ({worker, limit}) => {
+onForm('claim', async ({worker, limit, wait_seconds}) => {
   if (!group()) return;
   const channel = state.channel, selected = state.group;
-  const reply = await api(`${groupPath()}/claim`, {worker, limit: Number(limit)});
+  const payload = {worker, limit: Number(limit)};
+  if (Number(wait_seconds) > 0) payload.wait_seconds = Number(wait_seconds);
+  const reply = await api(`${groupPath()}/claim`, payload);
   for (const item of reply.items) state.leases.set(item.delivery_id, {...item, channel, group: selected});
   notice(reply.paused ? '消费组已暂停' : `领取 ${reply.items.length} 条`);
   await refresh();

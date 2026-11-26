@@ -1,6 +1,8 @@
 """Run one bounded middleware workflow through the public HTTP listener."""
 import argparse
 import logging
+import threading
+import time
 
 from quaybell.codec import fingerprint, pack
 
@@ -100,6 +102,147 @@ def claim(client):
     client.settle(next_item)
     assert client.claim()[0]['message_id'] == tail['message_id']
     return {'initial': independent['message_id'], 'head': head['message_id'], 'after_ack': tail['message_id']}
+
+
+def wait_active(client, group, count=1):
+    """Wait until HTTP wait requests have released their DB transactions."""
+    hub = getattr(getattr(client, 'server', None), 'events', None)
+    if hub is None:
+        time.sleep(0.15)
+        return
+    key = f'wire-gate/{group}'
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        if hub.active_count(key) >= count:
+            return
+        time.sleep(0.01)
+    raise AssertionError(f'等待者未进入等待: {key} {hub.active_count(key)}')
+
+
+def wait(client):
+    client.channel()
+    client.subscribe()
+
+    # A delayed delivery becomes ready when the (controlled) clock reaches its
+    # availability instant.  Wait a real second before advancing that clock so
+    # the workflow also reads as a genuine time-to-readiness demonstration.
+    timed = client.publish('timer-key', 'coil-timer', delay_seconds=1)
+
+    def advance_clock():
+        time.sleep(1.0)
+        client.tick(1)
+
+    threading.Thread(target=advance_clock, daemon=True).start()
+    started = time.monotonic()
+    timed_reply = client.request(GROUP + '/claim',
+                                 {'worker': 'timer-watcher', 'wait_seconds': 3})
+    time_elapsed = time.monotonic() - started
+    assert [item['message_id'] for item in timed_reply['items']] == [timed['message_id']]
+    assert 0.8 <= time_elapsed < 2.0
+
+    # A leased head blocks its ordering key; acking it wakes the waiting poll.
+    head_publication = client.publish('ack-head', 'coil-order')
+    tail_publication = client.publish('ack-tail', 'coil-order')
+    head_lease = client.claim(1, worker='foreground-worker')[0]
+    box = {}
+    waiter = threading.Thread(target=lambda: box.update(
+        reply=client.request(GROUP + '/wait',
+                             {'worker': 'ack-watcher', 'max_wait_seconds': 5})), daemon=True)
+    waiter.start()
+    wait_active(client, 'oscillator')
+
+    started = time.monotonic()
+    background = client.publish('publish-while-waiting', 'coil-background', delay_seconds=60)
+    publish_elapsed = time.monotonic() - started
+    assert background['message_id']
+
+    started = time.monotonic()
+    ack_receipt = client.settle(head_lease)
+    ack_elapsed = time.monotonic() - started
+    waiter.join(2)
+    assert not waiter.is_alive() and 'error' not in box
+    assert ack_receipt['state'] == 'acked'
+    assert [item['message_id'] for item in box['reply']['items']] == [tail_publication['message_id']]
+    assert publish_elapsed < 1 and ack_elapsed < 1
+
+    # Publication also wakes a separate idle poll immediately.
+    client.subscribe('publisher-watch')
+    publication_box = {}
+    publication_thread = threading.Thread(target=lambda: publication_box.update(
+        reply=client.request(CHANNEL + '/groups/publisher-watch/poll',
+                             {'worker': 'publisher-watcher', 'wait_seconds': 3})), daemon=True)
+    publication_thread.start()
+    wait_active(client, 'publisher-watch')
+    started = time.monotonic()
+    woken = client.publish('wake-by-publish', 'coil-publish-wake')
+    publication_thread.join(2)
+    publish_wake_elapsed = time.monotonic() - started
+    assert not publication_thread.is_alive() and 'error' not in publication_box
+    assert [item['message_id'] for item in publication_box['reply']['items']] == [woken['message_id']]
+    assert publish_wake_elapsed < 1
+
+    # Pause must broadcast to and return every waiting poll in that group.
+    client.subscribe('pause-watch')
+    pause_box = {}
+    pause_thread = threading.Thread(target=lambda: pause_box.update(
+        reply=client.request(CHANNEL + '/groups/pause-watch/wait',
+                             {'worker': 'pause-watcher', 'wait_seconds': 5})), daemon=True)
+    pause_thread.start()
+    wait_active(client, 'pause-watch')
+    started = time.monotonic()
+    client.request(CHANNEL + '/groups/pause-watch/pause', {'paused': True})
+    pause_thread.join(2)
+    pause_elapsed = time.monotonic() - started
+    assert not pause_thread.is_alive() and 'error' not in pause_box
+    assert pause_box['reply'] == {'paused': True, 'items': []}
+    assert pause_elapsed < 1
+
+    # Eight waiters and three independent keys: every lease is distinct.
+    client.subscribe('crowd')
+    waiters = 8
+    replies = [None] * waiters
+    errors = []
+
+    def competing(index):
+        try:
+            replies[index] = client.request(CHANNEL + '/groups/crowd/claim',
+                                            {'worker': f'crowd-{index}', 'limit': 1,
+                                             'wait_seconds': 2})
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=competing, args=(index,), daemon=True)
+               for index in range(waiters)]
+    for thread in threads:
+        thread.start()
+    wait_active(client, 'crowd', waiters)
+    expected = set()
+    for index in range(3):
+        publication = client.publish(f'crowd-key-{index}', f'coil-crowd-{index}')
+        expected.add(publication['fanout']['crowd'])
+    time.sleep(0.2)
+    client.tick(2)
+    for thread in threads:
+        thread.join(3)
+    assert not errors and not any(thread.is_alive() for thread in threads)
+    leased = [item for reply in replies for item in reply['items']]
+    delivery_ids = [item['delivery_id'] for item in leased]
+    lease_tokens = [item['lease']['token'] for item in leased]
+    assert len(leased) == 3
+    assert len(delivery_ids) == len(set(delivery_ids)) == 3
+    assert len(lease_tokens) == len(set(lease_tokens)) == 3
+    assert set(delivery_ids) == expected
+
+    return {
+        'time_delivery': timed['message_id'],
+        'time_wake_seconds': round(time_elapsed, 3),
+        'ack_unlocked_delivery': tail_publication['message_id'],
+        'publish_while_waiting_seconds': round(publish_elapsed, 3),
+        'ack_while_waiting_seconds': round(ack_elapsed, 3),
+        'publish_wake_seconds': round(publish_wake_elapsed, 3),
+        'pause_seconds': round(pause_elapsed, 3),
+        'competing_leases': sorted(delivery_ids),
+    }
 
 
 def ack(client):
@@ -208,7 +351,8 @@ def export(client):
 
 
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
-             inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
+             inspect=inspect, pause=pause, claim=claim, wait=wait, longpoll=wait, **{'long-poll': wait},
+             poll=wait, waiting=wait, ack=ack, retry=retry, sweep=sweep, dead=dead,
              redrive=redrive, board=board, retention=retention, export=export)
 
 

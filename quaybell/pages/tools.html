@@ -23,6 +23,7 @@
       <div class="pair">
         <label>工作进程<input name="worker" value="console-worker" required></label>
         <label>数量<input name="limit" type="number" min="1" max="30" value="1" required></label>
+        <label>最长等待秒数<input name="wait_seconds" type="number" min="0" max="60" step="0.1" value="0" required></label>
       </div>
       <div class="button-row"><button>领取</button><button type="button" id="toggle-group" class="quiet">暂停取件</button></div>
     </form>

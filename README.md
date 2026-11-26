@@ -27,7 +27,8 @@ python3 -m quaybell --demo
 | `/channels/{channel}/groups/{group}/pause` | POST | `paused` 为布尔值 |
 | `/channels/{channel}/preview` | POST | 用发布信封查询当前标签匹配结果 |
 | `/channels/{channel}/messages` | POST | `producer`、`key`、`lane`、`payload`、可选 `tags`、`delay_seconds` |
-| `/channels/{channel}/groups/{group}/claim` | POST | `worker`、可选 `limit`，返回含 `lease.token` 的领取项 |
+| `/channels/{channel}/groups/{group}/claim` | POST | `worker`、可选 `limit`、可选 `wait_seconds`（最长等待秒数），返回含 `lease.token` 的领取项 |
+| `/channels/{channel}/groups/{group}/wait` | POST | 长轮询取件；字段同 claim，可用 `max_wait_seconds` 指定最长等待 |
 | `/deliveries/{id}/ack` | POST | `token` |
 | `/deliveries/{id}/nack` | POST | `token` 和 `reason` |
 | `/sweep` | POST | `{}` 或 `limit`，按原截止时间回收全局租约 |
@@ -38,6 +39,14 @@ python3 -m quaybell --demo
 | `/channels/{channel}/retention` | GET / POST | 候选复核，或以 `{}` / `limit` 清理实际合格项 |
 
 默认策略是 `lease_seconds=24`、`retry_seconds=3`、`max_attempts=3`、`retention_seconds=3600`。重发原生产键时复用初始匹配结果，内容变化则返回 409。如果应用侧副作用必须去重，应按消息和消费组身份设计处理键。重投需要按其业务语义明确将后继身份识别为有意重新处理。
+
+低流量消费者可在 `claim` 请求中传 `wait_seconds`，或调用 `/wait` 长轮询。等待期间不持有数据库写事务；新发布、确认同顺序键队首、暂停组或延迟/租约截止都会唤醒检查。到达最长等待后仍只返回当时真正就绪且通过同键阻挡检查的投递，响应保持 `{paused,items}` 结构。多个等待者被同一事件唤醒时，由 SQLite 写事务串行发放租约，因此同一条投递不会出现两个有效租约。
+
+以下工作流用受控时钟演示“延迟到点”和“确认队首后解锁”，并并发验证等待中的发布、确认仍快速完成，以及多个等待者不会拿到重复租约：
+
+```sh
+python3 -m examples.walkthrough wait
+```
 
 以下载荷可发布到示例频道。默认延迟为零。
 
@@ -50,6 +59,7 @@ python3 -m quaybell --demo
 ```sh
 python3 -m compileall -q quaybell examples
 python3 -m examples.walkthrough claim
+python3 -m examples.walkthrough wait
 python3 -m examples.walkthrough retention
 python3 -m examples.walkthrough export
 ```

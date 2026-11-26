@@ -16,6 +16,7 @@ POLICY = dict(lease_seconds=4, retry_seconds=3, max_attempts=2, retention_second
 
 class Session:
     def __init__(self, server, clock):
+        self.server = server
         self.base = f'http://127.0.0.1:{server.server_port}/v1'
         self.clock = clock
 
@@ -45,8 +46,16 @@ class Session:
     def publish(self, key='signal-1', lane='coil-north', expected=201, **extra):
         return self.request(CHANNEL + '/messages', envelope(key, lane, **extra), expected)
 
-    def claim(self, limit=1, worker='bench-worker'):
-        return self.request(GROUP + '/claim', {'worker': worker, 'limit': limit})['items']
+    def claim(self, limit=1, worker='bench-worker', **options):
+        payload = {'worker': worker, 'limit': limit} | options
+        return self.request(GROUP + '/claim', payload)['items']
+
+    def wait_claim(self, wait_seconds=2, worker='wait-worker', limit=1, path=GROUP + '/wait', **extra):
+        payload = {'worker': worker, 'limit': limit, 'wait_seconds': wait_seconds} | extra
+        return self.request(path, payload)
+
+    wait_for_claim = wait_claim
+    long_poll = wait_claim
 
     def settle(self, item, mode='ack', expected=200):
         data = {'token': item['lease']['token']}

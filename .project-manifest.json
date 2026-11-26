@@ -52,6 +52,11 @@
       "responsibility": "按组取件和发放租约"
     },
     {
+      "id": "waiting",
+      "path": "quaybell/waiting.py",
+      "responsibility": "带最长等待时间的长轮询、唤醒版本和并发取件复查"
+    },
+    {
       "id": "eligibility",
       "path": "quaybell/eligibility.py",
       "responsibility": "同键队首和原因分类"
@@ -269,6 +274,26 @@
         "eligibility",
         "expiry",
         "policy",
+        "attempts"
+      ]
+    },
+    {
+      "id": "wait",
+      "name": "最长等待时间长轮询取件",
+      "entry": "POST /v1/channels/{channel}/groups/{group}/wait",
+      "success": "新发布、延迟到点或确认同键队首后取得唯一租约",
+      "failure": "超时只返回真正就绪项，暂停立即结束等待",
+      "verification": "python3 -m examples.walkthrough wait",
+      "steps": [
+        "请求携带 worker 和 wait_seconds/max_wait_seconds",
+        "等待期间不持有数据库写事务，发布和确认可并发提交",
+        "多个等待者由领取写事务串行化，不能获得同一投递租约"
+      ],
+      "module_ids": [
+        "waiting",
+        "claims",
+        "eligibility",
+        "subscriptions",
         "attempts"
       ]
     },

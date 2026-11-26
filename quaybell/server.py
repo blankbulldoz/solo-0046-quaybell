@@ -2,17 +2,20 @@ import logging
 import sqlite3
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from time import time
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
-from . import api_reads, api_writes, presentation, protocol, routes
+from . import api_reads, api_writes, presentation, protocol, routes, waiting
 from .errors import RelayError, missing
 
 LOG = logging.getLogger(__name__)
 
 
 class RelayServer(ThreadingHTTPServer):
+    daemon_threads = True
+
     def __init__(self, address, persistence, clock=time):
         self.persistence, self.clock = persistence, clock
+        self.events = waiting.WaitHub()
         super().__init__(address, RelayRequest)
 
     def get_request(self):
@@ -60,18 +63,57 @@ class RelayRequest(BaseHTTPRequestHandler):
             return
 
     def resolve_route(self, method):
-        path = urlsplit(self.path).path
+        parsed = urlsplit(self.path)
+        path = parsed.path
         route = routes.match(method, path)
         if route is None:
             if method == 'GET' and not path.startswith('/v1/'):
                 return presentation.serve(path)
             raise missing('找不到此接口')
         action, args = route
+        query = parse_qs(parsed.query)
+        hub = getattr(self.server, 'events', None)
         if method == 'GET':
             with self.server.persistence.session() as db:
                 return api_reads.read(db, action, args, self.server.clock())
-        raw = protocol.receive(self)
+
+        query_raw = {key: values[0] for key, values in query.items() if values}
+        if 'limit' in query_raw:
+            try:
+                query_raw['limit'] = int(query_raw['limit'])
+            except ValueError:
+                pass
+
+        if action == 'wait_claim' and self.headers.get('Content-Length') in (None, '0') \
+                and not self.headers.get('Transfer-Encoding'):
+            raw = dict(query_raw)
+        else:
+            raw = protocol.receive(self)
+
+        if action == 'wait_claim':
+            raw = {**query_raw, **raw}
+            seconds = waiting.parse_wait(
+                raw, query, self.headers, default=waiting.DEFAULT_WAIT_SECONDS)
+            result = waiting.wait_for_claim(
+                self.server.persistence, *args, raw, self.server.clock,
+                hub=hub, wait_seconds=seconds)
+            return protocol.Reply(result)
+
+        if action == 'claim':
+            seconds = waiting.parse_wait(raw, query, self.headers, default=0)
+            if seconds > 0:
+                raw = {**query_raw, **raw}
+                result = waiting.wait_for_claim(
+                    self.server.persistence, *args, raw, self.server.clock,
+                    hub=hub, wait_seconds=seconds)
+                return protocol.Reply(result)
+
         with self.server.persistence.session(write=action != 'preview') as db:
             if action == 'preview':
-                return api_reads.check_route(db, args[0], raw)
-            return api_writes.write(db, action, args, raw, self.server.clock())
+                reply = api_reads.check_route(db, args[0], raw)
+            else:
+                reply = api_writes.write(db, action, args, raw, self.server.clock())
+
+        if action in ('publish', 'pause', 'ack', 'nack', 'redrive', 'sweep', 'prune') and hub is not None:
+            hub.ping()
+        return reply
