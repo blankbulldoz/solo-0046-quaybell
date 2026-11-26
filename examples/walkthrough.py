@@ -1,5 +1,6 @@
 """Run one bounded middleware workflow through the public HTTP listener."""
 import argparse
+import copy
 import logging
 
 from quaybell.codec import fingerprint, pack
@@ -207,9 +208,164 @@ def export(client):
     return {'format': record['format'], 'sha256': digest}
 
 
+def _error_codes(report):
+    return [item['code'] for item in report.get('errors', [])]
+
+
+def window_scenario(client):
+    base = 1_730_310_000
+    client.clock[0] = float(base)
+    client.channel(dict(lease_seconds=300, retry_seconds=300, max_attempts=3,
+                        retention_seconds=3600))
+    client.subscribe('blue-audit')
+    client.subscribe('gold-audit')
+
+    client.clock[0] = float(base + 60)
+    secret = 'window-audit-secret-4172'
+    sent = client.publish('window-key', 'window-lane', producer='audit-producer',
+                          payload={'secret': secret, 'reading': 4172})
+    message_id = sent['message_id']
+    blue_id = sent['fanout']['blue-audit']
+    gold_id = sent['fanout']['gold-audit']
+
+    # 两个窗内领取；蓝组租约在窗内到期但不回收，金组租约跨到窗外后才确认。
+    client.clock[0] = float(base + 180)
+    blue = client.request(CHANNEL + '/groups/blue-audit/claim',
+                          {'worker': 'blue-worker', 'limit': 1})['items'][0]
+    assert blue['delivery_id'] == blue_id
+    client.clock[0] = float(base + 450)
+    gold = client.request(CHANNEL + '/groups/gold-audit/claim',
+                          {'worker': 'gold-worker', 'limit': 1})['items'][0]
+    assert gold['delivery_id'] == gold_id
+
+    first_start, first_end = base + 120, base + 720
+    client.clock[0] = float(first_end)
+    first = client.request(
+        f'/messages/{message_id}/evidence?start={first_start}&end={first_end}')
+    first_check = client.request('/evidence/verify', first)
+    first_counts = first_check['event_counts']
+    assert first_check['ok'] is True
+    assert first_counts['leased'] == 2
+    assert first_counts['lease_deadline_reached'] == 1
+    assert 'published' not in first_counts and 'acked' not in first_counts
+    assert 'expired' not in first_counts
+    deadline = next(event for event in first['trace']['events']
+                    if event['kind'] == 'lease_deadline_reached')
+    assert deadline['at'] == base + 480
+    assert deadline['details']['delivery_id'] == blue_id
+    assert deadline['details']['reclamation_recorded_in_window'] is False
+    first_encoded = pack(first)
+    assert secret not in first_encoded and 'audit-producer' not in first_encoded
+    assert first['subject']['published_relation'] == 'before_window'
+    assert any(item['kind'] == 'published' and item['time_relation'] == 'before_window'
+               for item in first['outside_facts'])
+
+    # 篡改窗内事实但保留旧摘要：接收端首先看到摘要不符。
+    tampered_fact = copy.deepcopy(first)
+    changed = False
+    for event in tampered_fact['trace']['events']:
+        if event.get('kind') == 'leased' and event.get('details', {}).get('worker') == 'blue-worker':
+            event['details']['worker'] = 'forged-worker'
+            changed = True
+    assert changed
+    tampered_check = client.request('/evidence/verify', tampered_fact)
+    assert tampered_check['ok'] is False
+    assert 'digest_mismatch' in _error_codes(tampered_check)
+
+    # 把窗外发布改标为窗内且不重算摘要：同样摘要不符。
+    mislabeled = copy.deepcopy(first)
+    published_marker = next(item for item in mislabeled['outside_facts']
+                           if item['kind'] == 'published')
+    published_marker['time_relation'] = 'in_window'
+    mislabeled_check = client.request('/evidence/verify', mislabeled)
+    assert mislabeled_check['ok'] is False
+    assert 'digest_mismatch' in _error_codes(mislabeled_check)
+
+    # 即使改动者重算自摘要，时间口径结构检查仍能识别“窗外事实自称窗内”。
+    resealed = copy.deepcopy(mislabeled)
+    resealed['sha256'] = fingerprint(pack(
+        {key: value for key, value in resealed.items() if key != 'sha256'}))
+    resealed_check = client.request('/evidence/verify', resealed)
+    assert resealed_check['integrity_valid'] is True
+    assert resealed_check['time_scope_valid'] is False
+    assert 'outside_fact_claimed_inside' in _error_codes(resealed_check)
+    assert resealed_check['ok'] is False
+
+    # 下一班：金组在第二个十分钟窗口内确认；蓝组到期租约到这时才实际回收。
+    client.clock[0] = float(base + 735)
+    settled = client.settle(gold)
+    assert settled['state'] == 'acked'
+    client.clock[0] = float(base + 900)
+    swept = client.request('/sweep', {'limit': 10})
+    assert [item['delivery_id'] for item in swept['recovered']] == [blue_id]
+
+    second_start, second_end = base + 720, base + 1320
+    client.clock[0] = float(second_end)
+    second = client.request(
+        f'/messages/{message_id}/evidence?start={second_start}&end={second_end}')
+    second_check = client.request('/evidence/verify', second)
+    second_counts = second_check['event_counts']
+    assert second_check['ok'] is True
+    assert second_counts.get('acked') == 1
+    assert second_counts.get('expired') == 1
+    assert 'leased' not in second_counts and 'published' not in second_counts
+    assert 'lease_deadline_reached' not in second_counts
+    second_encoded = pack(second)
+    assert secret not in second_encoded and 'audit-producer' not in second_encoded
+    assert first['subject']['envelope_commitment'] == second['subject']['envelope_commitment']
+    assert first['subject']['message_id'] == second['subject']['message_id']
+
+    return {
+        'message_id': message_id,
+        'first': first,
+        'second': second,
+        'first_check': first_check,
+        'second_check': second_check,
+        'tampered_fact': tampered_fact,
+        'tampered_check': tampered_check,
+        'mislabeled': mislabeled,
+        'mislabeled_check': mislabeled_check,
+        'resealed': resealed,
+        'resealed_check': resealed_check,
+    }
+
+
+def _window_brief(document, check):
+    return {
+        'sha256': document['sha256'],
+        'window': document['window'],
+        'event_counts': check['event_counts'],
+        'claims': check['claims'],
+        'supported': check['supported'],
+        'not_supported': check['not_supported'],
+        'verify_ok': check['ok'],
+    }
+
+
+def window(client):
+    scenario = window_scenario(client)
+    return {
+        'message_id': scenario['message_id'],
+        'window_one': _window_brief(scenario['first'], scenario['first_check']),
+        'window_two': _window_brief(scenario['second'], scenario['second_check']),
+        'changed_in_window_fact': {
+            'verify_ok': scenario['tampered_check']['ok'],
+            'errors': _error_codes(scenario['tampered_check'])},
+        'outside_event_mislabeled_with_old_digest': {
+            'verify_ok': scenario['mislabeled_check']['ok'],
+            'errors': _error_codes(scenario['mislabeled_check'])},
+        'outside_event_mislabeled_and_resealed': {
+            'verify_ok': scenario['resealed_check']['ok'],
+            'integrity_valid': scenario['resealed_check']['integrity_valid'],
+            'time_scope_valid': scenario['resealed_check']['time_scope_valid'],
+            'errors': _error_codes(scenario['resealed_check']),
+        },
+    }
+
+
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             redrive=redrive, board=board, retention=retention, export=export, window=window)
 
 
 def main():

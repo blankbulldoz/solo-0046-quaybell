@@ -7,6 +7,26 @@ const channelPath = () => `/channels/${state.channel}`;
 const groupPath = () => `${channelPath()}/groups/${state.group}`;
 const traceLink = (id, label = `#${id}`) => button(label, () => trace(id), {className: 'link'});
 
+function windowBounds() {
+  const start = Number($('trace-window-start')?.value);
+  const end = Number($('trace-window-end')?.value);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || end - start > 600) return null;
+  return {start, end};
+}
+
+function updateWindowExport(id) {
+  const link = $('trace-window-export');
+  if (!link) return;
+  const bounds = windowBounds();
+  if (!bounds) {
+    link.removeAttribute('href');
+    link.setAttribute('aria-disabled', 'true');
+    return;
+  }
+  link.href = `/v1/messages/${id}/evidence?start=${bounds.start}&end=${bounds.end}`;
+  link.removeAttribute('aria-disabled');
+}
+
 function selectButton(name, active, action) {
   const control = button(name, async () => {
     const scope = control.closest('nav') ? $('channels') : $('groups');
@@ -142,6 +162,11 @@ async function trace(id) {
   $('trace-events').replaceChildren(...facts.events.map(item => node('li',
     `${clock(item.at)} · ${TEXT[item.kind === 'leased' ? 'leased_event' : item.kind]} · ${JSON.stringify(item.details)}`)));
   $('trace-export').href = `/v1/messages/${id}/evidence`;
+  const windowEnd = Math.round(state.board?.observed_at ?? Date.now() / 1000);
+  $('trace-window-end').value = windowEnd;
+  $('trace-window-start').value = windowEnd - 600;
+  $('trace-window-report').hidden = true;
+  updateWindowExport(id);
   $('trace').showModal();
 }
 
@@ -215,5 +240,33 @@ $('retention-apply').addEventListener('click', () => run(async () => {
   notice(`已清理 ${reply.removed.length} 条消息`);
   await refresh();
 }));
+for (const field of ['trace-window-start', 'trace-window-end']) {
+  $(field).addEventListener('input', () => {
+    const id = $('trace-export').href.match(/\/messages\/(\d+)\/evidence$/)?.[1];
+    if (id) updateWindowExport(id);
+  });
+}
+$('trace-window-check').addEventListener('click', () => run(async () => {
+  const link = $('trace-window-export');
+  if (!link.href || link.getAttribute('aria-disabled') === 'true') {
+    throw new Error('请填写有效且长度不超过十分钟的 start/end');
+  }
+  const response = await fetch(link.href);
+  const document = await response.json();
+  if (!response.ok) throw new Error(document.message || '窗口证据导出失败');
+  const report = await api('/evidence/verify', document);
+  const target = $('trace-window-report');
+  target.hidden = false;
+  target.textContent = JSON.stringify({
+    ok: report.ok,
+    integrity_valid: report.integrity_valid,
+    time_scope_valid: report.time_scope_valid,
+    errors: report.errors,
+    claims: report.claims,
+    supported: report.supported,
+    not_supported: report.not_supported,
+  }, null, 2);
+  notice(report.ok ? '窗口件摘要和时间口径复核通过' : '窗口件复核未通过');
+}, $('trace-window-check')));
 render();
 run(refresh);

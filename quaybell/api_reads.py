@@ -2,7 +2,7 @@ from . import catalog, deadletters, evidence, inspection, overview, retention, r
 from .protocol import Reply
 
 
-def read(db, action, args, now):
+def read(db, action, args, now, query=''):
     if action == 'channels':
         return Reply({'channels': catalog.list_all(db)})
     if action == 'board':
@@ -14,10 +14,26 @@ def read(db, action, args, now):
     if action == 'retention':
         return Reply(retention.plan(db, args[0], now))
     if action == 'export':
-        return Reply(evidence.export_trace(db, int(args[0]), now),
+        window = evidence.window_from_query(query, now)
+        message_id = int(args[0])
+        if window is None:
+            return Reply(evidence.export_trace(db, message_id, now),
+                         content_type='application/json; charset=utf-8',
+                         filename=f'quaybell-trace-{args[0]}.json')
+        return Reply(evidence.export_window(db, message_id, now, **window),
                      content_type='application/json; charset=utf-8',
-                     filename=f'quaybell-trace-{args[0]}.json')
+                     filename=f"quaybell-window-{args[0]}-{window['start']}-{window['end']}.json")
     raise AssertionError(action)
+
+
+def verify(raw):
+    document = raw.get('document') if isinstance(raw, dict) and isinstance(raw.get('document'), dict) else raw
+    expected_source = raw.get('expected_source_commitment') if isinstance(raw, dict) else None
+    expected_sha = raw.get('expected_sha256') if isinstance(raw, dict) else None
+    if isinstance(document, dict):
+        expected_source = expected_source or document.get('expected_source_commitment')
+        expected_sha = expected_sha or document.get('expected_sha256')
+    return Reply(evidence.verify_document(document, expected_source, expected_sha))
 
 
 def check_route(db, channel, raw):

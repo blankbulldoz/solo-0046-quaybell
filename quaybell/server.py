@@ -60,7 +60,8 @@ class RelayRequest(BaseHTTPRequestHandler):
             return
 
     def resolve_route(self, method):
-        path = urlsplit(self.path).path
+        parsed = urlsplit(self.path)
+        path = parsed.path
         route = routes.match(method, path)
         if route is None:
             if method == 'GET' and not path.startswith('/v1/'):
@@ -69,8 +70,11 @@ class RelayRequest(BaseHTTPRequestHandler):
         action, args = route
         if method == 'GET':
             with self.server.persistence.session() as db:
-                return api_reads.read(db, action, args, self.server.clock())
-        raw = protocol.receive(self)
+                return api_reads.read(db, action, args, self.server.clock(), parsed.query)
+        raw = protocol.receive(
+            self, protocol.VERIFY_MAX_REQUEST if action == 'verify_evidence' else protocol.MAX_REQUEST)
+        if action == 'verify_evidence':
+            return api_reads.verify(raw)
         with self.server.persistence.session(write=action != 'preview') as db:
             if action == 'preview':
                 return api_reads.check_route(db, args[0], raw)

@@ -127,6 +127,12 @@ pre { padding: 10px; border-radius: 5px; background: #eef3ed; white-space: pre-w
 .timeline { padding-left: 26px; }
 .timeline li { margin: 6px 0; }
 .trace-attempts { padding-left: 20px; color: var(--muted); }
+.window-evidence { margin: 14px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #f7faf6; }
+.window-evidence h3 { margin: 0 0 4px; }
+.window-inputs { align-items: end; flex-wrap: wrap; }
+.window-inputs label { display: grid; gap: 3px; color: var(--muted); font-size: .86rem; }
+.window-inputs input { width: 130px; }
+.window-report { max-height: 260px; overflow: auto; font-size: .78rem; }
 @media (max-width: 940px) {
   .layout { grid-template-columns: minmax(120px, 155px) minmax(0,1fr); }
   .tools { grid-column: 2; }

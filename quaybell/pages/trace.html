@@ -7,5 +7,16 @@
   <h3>信封</h3><pre id="trace-envelope"></pre>
   <h3>投递和尝试</h3><div id="trace-deliveries"></div>
   <h3>处理记录</h3><ol id="trace-events" class="timeline"></ol>
-  <a id="trace-export" class="button-link">下载证据</a>
+  <div class="window-evidence">
+    <h3>交班十分钟窗口件</h3>
+    <p class="muted">填写闭区间 Unix 秒边界；窗外发布载荷和处理明细不会进入下载包。</p>
+    <div class="button-row window-inputs">
+      <label>起点 <input id="trace-window-start" inputmode="numeric" size="12" placeholder="start"></label>
+      <label>终点 <input id="trace-window-end" inputmode="numeric" size="12" placeholder="end"></label>
+      <a id="trace-window-export" class="button-link" aria-disabled="true">下载窗口证据</a>
+      <button id="trace-window-check" class="quiet" type="button">接收端复核</button>
+    </div>
+    <pre id="trace-window-report" class="window-report" hidden></pre>
+  </div>
+  <a id="trace-export" class="button-link">下载完整证据</a>
 </dialog>

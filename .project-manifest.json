@@ -422,6 +422,25 @@
         "inspection",
         "codec"
       ]
+    },
+    {
+      "id": "window",
+      "name": "按交班时间窗导出选择性证据",
+      "entry": "GET /v1/messages/{id}/evidence?start={seconds}&end={seconds}",
+      "success": "两次交班各自只含窗内事实，接收端可复核摘要与时间口径",
+      "failure": "改动窗内事实或把窗外事件标称为窗内时复核失败",
+      "verification": "python3 -m examples.walkthrough window",
+      "steps": [
+        "按 journal.at 选择窗内事件，并以 attempts.expires 区分截止与实际回收",
+        "窗外载荷、生产者和处理明细只以时间关系和摘要承诺披露",
+        "接收端重算摘要、来源承诺和窗口边界并给出可支持结论"
+      ],
+      "module_ids": [
+        "evidence",
+        "inspection",
+        "codec",
+        "api_reads"
+      ]
     }
   ],
   "complexity": {
