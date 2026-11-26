@@ -1,4 +1,4 @@
-from . import catalog, codec, delivery, journal, policy, routing
+from . import catalog, codec, delivery, journal, policy, routing, watermark
 from .envelope import Envelope
 from .errors import conflict, missing
 
@@ -36,5 +36,6 @@ def publish(db, channel, raw, now):
     fanout = {}
     for group in routing.matching(db, channel, envelope.tags):
         fanout[group['name']] = delivery.add(db, key, group['id'], envelope.lane, active['version'], ready_at)
+        watermark.pending(db, channel, group['name'], key, envelope.lane, active['version'], digest, now)
     journal.append(db, channel, now, 'published', {'fanout': fanout, 'policy': active['version']}, key)
     return dict(message_id=key, policy=active['version'], repeated=False, fanout=fanout)

@@ -36,8 +36,22 @@ python3 -m quaybell --demo
 | `/messages/{id}` | GET | 信封、分发、尝试、消息级处理记录 |
 | `/messages/{id}/evidence` | GET | `quaybell-trace/1` JSON 下载，摘要针对除 `sha256` 之外的规范化内容 |
 | `/channels/{channel}/retention` | GET / POST | 候选复核，或以 `{}` / `limit` 清理实际合格项 |
+| `/channels/{channel}/groups/{group}/watermark` | GET / POST | 读取按消费组的水位与缺口，或以 `{}` 签发冻结凭证 |
+| `/watermarks/{id}` | GET | 读回已签发凭证，附摘要与依据重算结果 |
 
 默认策略是 `lease_seconds=24`、`retry_seconds=3`、`max_attempts=3`、`retention_seconds=3600`。重发原生产键时复用初始匹配结果，内容变化则返回 409。如果应用侧副作用必须去重，应按消息和消费组身份设计处理键。重投需要按其业务语义明确将后继身份识别为有意重新处理。
+
+## 消费确认水位
+
+水位按消费组独立计算，供下游判断一段已投递历史能否外部归档。规则如下：
+
+- 只有在本组已确认（`acked`）的消息才能作为水位依据。水位取最早一道缺口之前全部已确认消息的最大消息号；缺口是编号最低的未确认消息，不区分是否同顺序键。
+- 缺口之前若有消息从未分发给本组（例如标签不匹配），它们不算缺口，但会被列入 `skipped_message_ids`，供归档时说明该段不是连续投递。
+- 缺口处于重试等待、租约中或已进死信时，较晚的成功确认只进入 `ahead` 待定区，不会越过缺口推进 `watermark_message_id`；`gap` 给出阻塞投递、状态和最后一次尝试。
+- `archive_ready` 仅在无缺口时为真，表示截至 `watermark_message_id` 的历史可整体归档。
+- `POST .../watermark` 签发一份冻结凭证：内容包含水位、全部已确认依据（消息号、顺序键、策略、信封摘要、投递、尝试、确认时间），以及签发时的缺口与跳过集合，随附 `sha256`。凭证存入数据库，`GET /watermarks/{id}` 可随时读回。
+- 凭证核对会重算规范化摘要，并逐条比对依据台账。常规清理删除消息及其投递、尝试和消息级审计后，水位依据与凭证仍保留，`verification.messages_cleaned` 会报告其中已清理的条数，`digest_matches`、`basis_matches` 仍应为真。
+- 清理不会删除水位台账与凭证；`GET .../watermark` 中的 `messages_present` 显示台账里仍在库中的消息数，归零表示依据只剩凭证本身。
 
 以下载荷可发布到示例频道。默认延迟为零。
 
@@ -52,6 +66,7 @@ python3 -m compileall -q quaybell examples
 python3 -m examples.walkthrough claim
 python3 -m examples.walkthrough retention
 python3 -m examples.walkthrough export
+python3 -m examples.walkthrough watermark
 ```
 
 每个工作流示例使用临时 SQLite 文件、受控时钟和本机随机端口，运行完即释放。可用 `python3 -m examples.walkthrough --help` 列出所有工作流。正式测试套件延后建设。

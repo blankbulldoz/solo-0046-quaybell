@@ -48,4 +48,12 @@
       <output class="muted" id="retention-result" aria-live="polite"></output>
     </div>
   </details>
+  <details data-needs-channel>
+    <summary>消费确认水位</summary>
+    <div class="compact">
+      <p class="muted">缺口未关闭时水位停在前一段连续确认，较晚确认只进入待定区。</p>
+      <div class="button-row"><button type="button" id="watermark-view" class="quiet">查看水位</button><button type="button" id="watermark-issue">签发凭证</button></div>
+      <output class="muted" id="watermark-result" aria-live="polite"></output>
+    </div>
+  </details>
 </aside>

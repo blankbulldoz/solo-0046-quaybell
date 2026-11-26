@@ -207,9 +207,96 @@ def export(client):
     return {'format': record['format'], 'sha256': digest}
 
 
+def watermark(client):
+    client.channel(POLICY)
+    client.subscribe(tags={'feed': 'samples'})
+    early = client.publish('early-1')
+    behind = client.publish('early-2')
+    aside = client.publish('aside-1', 'coil-south')
+    client.request('/channels', {'name': 'side-channel', 'policy': POLICY}, 201)
+    for key in ('foreign-1', 'foreign-2'):
+        client.request('/channels/side-channel/messages', envelope(key, 'coil-outer'), 201)
+    alert = client.publish('alert-1', tags={'feed': 'alerts'})
+    tail = client.publish('late-1')
+    west = client.publish('aside-2', 'coil-west')
+    ids = [early['message_id'], behind['message_id'], aside['message_id'], alert['message_id'],
+           tail['message_id'], west['message_id']]
+    assert ids == sorted(ids) and ids != list(range(ids[0], ids[0] + len(ids))), ids
+    picked = client.claim(3)
+    taken = {item['message_id']: item for item in picked}
+    assert set(taken) == {early['message_id'], aside['message_id'], west['message_id']}
+    for item in picked:
+        client.settle(item)
+    waiting = client.request(GROUP + '/watermark')
+    assert waiting['watermark_message_id'] == early['message_id']
+    assert waiting['gap']['message_id'] == behind['message_id'] and waiting['gap']['state'] == 'waiting'
+    assert [row['message_id'] for row in waiting['ahead']] == [aside['message_id'], west['message_id']]
+    blocked = client.claim()[0]
+    assert blocked['message_id'] == behind['message_id']
+    client.settle(blocked, 'nack')
+    retrying = client.request(GROUP + '/watermark')
+    assert retrying['gap']['state'] == 'waiting' and retrying['gap']['last_attempt']['outcome'] == 'nacked'
+    client.tick(3)
+    again = client.claim()[0]
+    assert again['message_id'] == behind['message_id'] and again['lease']['number'] == 2
+    client.settle(again, 'nack')
+    stuck = client.request(GROUP + '/watermark')
+    assert stuck['gap']['state'] == 'dead' and stuck['gap']['last_attempt']['outcome'] == 'nacked'
+    before = client.request(GROUP + '/watermark', {}, 201)
+    assert before['watermark_message_id'] == early['message_id']
+    assert [row['message_id'] for row in before['confirmed']] == [early['message_id']]
+    assert before['watermark_message_id'] != max(row['message_id'] for row in before['ahead'])
+    assert before['archive_ready'] is False
+    assert before['verification']['basis_checked'] == 1 and before['verification']['basis_matches']
+    lanes = {row['lane']: row for row in before['lanes']}
+    assert lanes['coil-north']['gap_message_id'] == behind['message_id'] and lanes['coil-north']['holds_global']
+    assert lanes['coil-south']['watermark_message_id'] == aside['message_id']
+    assert lanes['coil-west']['watermark_message_id'] == west['message_id']
+    child = client.request(f"/deliveries/{stuck['gap']['delivery_id']}/redrive", {}, 201)
+    late = client.claim()[0]
+    assert late['message_id'] == tail['message_id']
+    client.settle(late)
+    heir = client.claim()[0]
+    assert heir['delivery_id'] == child['delivery_id'] and heir['message_id'] == behind['message_id']
+    client.settle(heir)
+    healed = client.request(GROUP + '/watermark', {}, 201)
+    assert healed['watermark_message_id'] == west['message_id'] and healed['archive_ready'] is True
+    assert healed['gap'] is None and healed['skipped_message_ids'] == [alert['message_id']]
+    assert [row['message_id'] for row in healed['confirmed']] == [
+        early['message_id'], behind['message_id'], aside['message_id'],
+        tail['message_id'], west['message_id']]
+    assert healed['verification']['basis_checked'] == 5
+    client.tick(11)
+    assert client.request(CHANNEL + '/retention')['eligible']
+    client.request(CHANNEL + '/retention', {})
+    client.request(f"/messages/{early['message_id']}", expected=404)
+    stale = client.request(GROUP + '/watermark', {}, 201)
+    kept = client.request(f"/watermarks/{before['certificate_id']}")
+    after = client.request(f"/watermarks/{healed['certificate_id']}")
+    assert kept['sha256'] == before['sha256'] and kept['verification']['digest_matches']
+    assert kept['verification']['basis_matches'] and kept['verification']['messages_cleaned'] == 1
+    assert after['sha256'] == healed['sha256'] and after['verification']['digest_matches']
+    assert after['verification']['basis_matches'] and after['verification']['messages_cleaned'] == 5
+    assert stale['watermark_message_id'] == west['message_id'] and stale['messages_present'] == 0
+    return {'sequence': ids,
+            'before': {'watermark': before['watermark_message_id'], 'gap': before['gap']['state'],
+                       'ahead': [row['message_id'] for row in before['ahead']],
+                       'archive_ready': before['archive_ready'],
+                       'lanes': {row['lane']: row['watermark_message_id'] for row in before['lanes']},
+                       'certificate': before['certificate_id']},
+            'during_retry': retrying['gap']['state'],
+            'after': {'watermark': healed['watermark_message_id'],
+                      'confirmed': [row['message_id'] for row in healed['confirmed']],
+                      'skipped': healed['skipped_message_ids'], 'archive_ready': healed['archive_ready'],
+                      'certificate': healed['certificate_id']},
+            'cleaned': {'prior_certificate': kept['verification'],
+                        'final_certificate': after['verification'],
+                        'messages_present': stale['messages_present']}}
+
+
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             redrive=redrive, board=board, retention=retention, export=export, watermark=watermark)
 
 
 def main():

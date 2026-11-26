@@ -1,4 +1,4 @@
-from . import attempts, delivery, journal, policy
+from . import attempts, delivery, journal, policy, watermark
 
 
 def apply(db, item, attempt, disposition, reason, now):
@@ -15,5 +15,7 @@ def apply(db, item, attempt, disposition, reason, now):
                   state=state, effective_at=when, reason=reason)
     delivery.close(db, item['id'], state, when)
     attempts.finish(db, attempt, disposition, reason, now, result)
+    if disposition == 'acked':
+        watermark.confirmed(db, item, attempt, now)
     journal.append(db, item['channel'], now, disposition, result, item['message_id'])
     return result

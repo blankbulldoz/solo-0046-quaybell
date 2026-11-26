@@ -73,6 +73,10 @@
     {
       "workflow_id": "export",
       "command": "python3 -m examples.walkthrough export"
+    },
+    {
+      "workflow_id": "watermark",
+      "command": "python3 -m examples.walkthrough watermark"
     }
   ]
 }

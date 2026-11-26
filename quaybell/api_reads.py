@@ -1,4 +1,4 @@
-from . import catalog, deadletters, evidence, inspection, overview, retention, routing
+from . import catalog, deadletters, evidence, inspection, overview, retention, routing, watermark
 from .protocol import Reply
 
 
@@ -17,6 +17,10 @@ def read(db, action, args, now):
         return Reply(evidence.export_trace(db, int(args[0]), now),
                      content_type='application/json; charset=utf-8',
                      filename=f'quaybell-trace-{args[0]}.json')
+    if action == 'watermark':
+        return Reply(watermark.view(db, args[0], args[1], now))
+    if action == 'watermark_certificate':
+        return Reply(watermark.reproduce(db, int(args[0])))
     raise AssertionError(action)
 
 

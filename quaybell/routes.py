@@ -4,11 +4,13 @@ CHANNEL = r'/v1/channels/([a-z][a-z0-9-]{0,47})'
 GROUP = CHANNEL + r'/groups/([a-z][a-z0-9-]{0,47})'
 MESSAGE = r'/v1/messages/([1-9][0-9]{0,17})'
 DELIVERY = r'/v1/deliveries/([1-9][0-9]{0,17})'
+WATERMARK = r'/v1/watermarks/([1-9][0-9]{0,17})'
 
 PATTERNS = {
     'GET': (
         ('/v1/channels', 'channels'), (CHANNEL, 'board'), (CHANNEL + '/dead', 'dead'),
         (MESSAGE, 'trace'), (MESSAGE + '/evidence', 'export'), (CHANNEL + '/retention', 'retention'),
+        (GROUP + '/watermark', 'watermark'), (WATERMARK, 'watermark_certificate'),
     ),
     'POST': (
         ('/v1/channels', 'create_channel'), (CHANNEL + '/policy', 'revision'),
@@ -16,6 +18,7 @@ PATTERNS = {
         (CHANNEL + '/preview', 'preview'), (CHANNEL + '/messages', 'publish'),
         (GROUP + '/claim', 'claim'), (DELIVERY + '/ack', 'ack'), (DELIVERY + '/nack', 'nack'),
         ('/v1/sweep', 'sweep'), (DELIVERY + '/redrive', 'redrive'), (CHANNEL + '/retention', 'prune'),
+        (GROUP + '/watermark', 'watermark_issue'),
     ),
 }
 ROUTES = {method: [(re.compile(pattern), action) for pattern, action in patterns]

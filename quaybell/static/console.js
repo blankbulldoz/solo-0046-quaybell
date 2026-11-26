@@ -197,6 +197,29 @@ $('recover').addEventListener('click', () => run(async () => {
   notice(`已回收 ${report.recovered.length} 个过期租约`);
   await refresh();
 }, $('recover')));
+function describeWatermark(report) {
+  if (!report.ledger.entries) return '本组还没有签发过水位记录';
+  const head = report.watermark_message_id ? `水位消息 #${report.watermark_message_id}` : '水位尚未推进';
+  const gap = report.gap ? `缺口 #${report.gap.message_id} · ${TEXT[report.gap.state] || report.gap.state}` : '无缺口';
+  return `${head} · ${gap} · 已确认 ${report.ledger.confirmed}/${report.ledger.entries}`;
+}
+
+async function showWatermark(issue) {
+  if (!group()) return;
+  const reply = issue
+    ? await api(`${groupPath()}/watermark`, {})
+    : await api(`${groupPath()}/watermark`);
+  const check = reply.verification;
+  $('watermark-result').textContent = issue
+    ? `凭证 #${reply.certificate_id} · ${describeWatermark(reply)} · 摘要${check.digest_matches ? '一致' : '不符'} · 依据${check.basis_matches ? '核对通过' : '核对失败'}`
+    : describeWatermark(reply);
+}
+
+$('watermark-view').addEventListener('click', () => run(() => showWatermark(false), $('watermark-view')));
+$('watermark-issue').addEventListener('click', () => run(async () => {
+  await showWatermark(true);
+  notice('水位凭证已签发');
+}, $('watermark-issue')));
 $('refresh').addEventListener('click', () => run(refresh, $('refresh')));
 $('retention-plan').addEventListener('click', () => run(async () => {
   const channel = state.channel;

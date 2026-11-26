@@ -1,4 +1,4 @@
-from . import catalog, claims, disposition, expiry, inputs, publication, redrive, retention, subscriptions
+from . import catalog, claims, disposition, expiry, inputs, publication, redrive, retention, subscriptions, watermark
 from .protocol import Reply
 
 
@@ -26,4 +26,7 @@ def write(db, action, args, raw, now):
         return Reply(item, 200 if item['repeated'] else 201)
     if action == 'prune':
         return Reply(retention.prune(db, *args, raw, now))
+    if action == 'watermark_issue':
+        inputs.require(raw, ())
+        return Reply(watermark.issue(db, *args, now), 201)
     raise AssertionError(action)

@@ -1,4 +1,4 @@
-VERSION = 1
+VERSION = 2
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS channels (
   name TEXT PRIMARY KEY,
@@ -71,6 +71,30 @@ CREATE TABLE IF NOT EXISTS journal (
   kind TEXT NOT NULL,
   details TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS watermark_entries (
+  channel TEXT NOT NULL REFERENCES channels(name),
+  group_name TEXT NOT NULL,
+  message_id INTEGER NOT NULL,
+  lane TEXT NOT NULL,
+  policy INTEGER NOT NULL,
+  message_sha256 TEXT NOT NULL,
+  published REAL NOT NULL,
+  state TEXT NOT NULL CHECK(state IN ('pending','confirmed')),
+  delivery_id INTEGER,
+  parent_id INTEGER,
+  attempt INTEGER,
+  confirmed_at REAL,
+  PRIMARY KEY(channel, group_name, message_id)
+);
+CREATE TABLE IF NOT EXISTS watermark_certificates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  channel TEXT NOT NULL REFERENCES channels(name),
+  group_name TEXT NOT NULL,
+  issued_at REAL NOT NULL,
+  watermark_message_id INTEGER,
+  payload TEXT NOT NULL,
+  sha256 TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS delivery_lane ON deliveries(subscription_id,lane,id)
   WHERE state IN ('waiting','leased');
 CREATE INDEX IF NOT EXISTS delivery_origin ON deliveries(message_id,id);
@@ -78,4 +102,6 @@ CREATE INDEX IF NOT EXISTS attempt_deadline ON attempts(expires,id) WHERE outcom
 CREATE UNIQUE INDEX IF NOT EXISTS one_open_attempt ON attempts(delivery_id) WHERE outcome='open';
 CREATE INDEX IF NOT EXISTS message_channel ON messages(channel,published,id);
 CREATE INDEX IF NOT EXISTS journal_message ON journal(message_id,id);
+CREATE INDEX IF NOT EXISTS watermark_group ON watermark_entries(channel,group_name,message_id);
+CREATE INDEX IF NOT EXISTS certificate_group ON watermark_certificates(channel,group_name,id);
 '''

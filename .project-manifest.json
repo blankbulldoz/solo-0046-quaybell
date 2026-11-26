@@ -97,6 +97,11 @@
       "responsibility": "基于消息年龄和派生投递的清理"
     },
     {
+      "id": "watermark",
+      "path": "quaybell/watermark.py",
+      "responsibility": "按消费组签发的水位凭证与缺口台账"
+    },
+    {
       "id": "evidence",
       "path": "quaybell/evidence.py",
       "responsibility": "可下载快照及可复算摘要"
@@ -420,6 +425,26 @@
       "module_ids": [
         "evidence",
         "inspection",
+        "codec"
+      ]
+    },
+    {
+      "id": "watermark",
+      "name": "签发按消费组的水位凭证",
+      "entry": "GET / POST /v1/channels/{channel}/groups/{group}/watermark",
+      "success": "缺口关闭后水位推进且凭证可复算，清理后依据仍可核对",
+      "failure": "早期分发终败或重试中，较晚确认只进入待定区而不越过缺口",
+      "verification": "python3 -m examples.walkthrough watermark",
+      "steps": [
+        "通过 GET / POST /v1/channels/{channel}/groups/{group}/watermark 发起操作",
+        "缺口未关闭时水位停在前一段连续确认，较晚确认只记入待定区",
+        "缺口关闭后水位越过缺口，签发凭证绑定已确认依据并在清理后仍可复核"
+      ],
+      "module_ids": [
+        "watermark",
+        "outcomes",
+        "retention",
+        "delivery",
         "codec"
       ]
     }
