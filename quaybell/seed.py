@@ -1,6 +1,6 @@
 from time import time
 
-from . import catalog, claims, disposition, publication, subscriptions
+from . import assignments, catalog, claims, disposition, publication, subscriptions
 
 CHANNEL = 'signal-weir'
 
@@ -23,3 +23,7 @@ def populate(persistence):
         taken = claims.claim(db, CHANNEL, 'receipt-rotor', {'worker': 'seed-worker'}, now)['items'][0]
         disposition.settle(db, taken['delivery_id'], {'token': taken['lease']['token'],
                            'reason': '下游解码器拒绝示范样本'}, now, 'nacked')
+        # 给值守面板一个可核对的两分片归属；此时没有开放租约，使用 honor 不围栏任何尝试。
+        assignments.configure(db, CHANNEL, 'receipt-rotor',
+                              {'partitions': 2, 'workers': ['seed-worker', 'rotor-backup'],
+                               'lease_policy': 'honor'}, now)

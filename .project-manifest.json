@@ -17,6 +17,11 @@
       "responsibility": "标签订阅和取件开关"
     },
     {
+      "id": "assignments",
+      "path": "quaybell/assignments.py",
+      "responsibility": "可重新分配的固定分片、属主版本、每键归属、授权预查与旧租约围栏"
+    },
+    {
       "id": "routing",
       "path": "quaybell/routing.py",
       "responsibility": "预查和发布共用的精确匹配"

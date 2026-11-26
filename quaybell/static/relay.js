@@ -2,8 +2,11 @@ export const $ = id => document.getElementById(id);
 export const TEXT = {
   ready: '可领取', blocked: '顺序阻挡', delayed: '未到就绪时间', paused: '暂停取件',
   leased: '租约中', expired: '租约超时', acked: '已确认', nacked: '已拒绝',
-  waiting: '等待中', dead: '死信', open: '未应答', leased_event: '发放租约',
-  published: '已发布', redriven: '重投',
+  waiting: '等待中', dead: '死信', open: '未应答', idle: '空闲', retry: '退避重试',
+  empty: '尚无投递', fenceable: '可围栏', lease_bound: '旧租约处理中',
+  ready_for_owner: '待属主领取', leased_event: '发放租约',
+  published: '已发布', redriven: '重投', lease_fenced: '围栏旧租约',
+  assignment_configured: '配置分片', assignment_rebalanced: '重新分配分片',
 };
 
 export async function api(path, data) {

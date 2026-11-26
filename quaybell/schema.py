@@ -2,7 +2,8 @@ VERSION = 1
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS channels (
   name TEXT PRIMARY KEY,
-  created REAL NOT NULL
+  created REAL NOT NULL,
+  partition_count INTEGER
 );
 CREATE TABLE IF NOT EXISTS policies (
   channel TEXT NOT NULL REFERENCES channels(name),
@@ -61,7 +62,36 @@ CREATE TABLE IF NOT EXISTS attempts (
   finished REAL,
   reason TEXT,
   receipt TEXT,
+  assignment_version INTEGER,
+  partition INTEGER,
   UNIQUE(delivery_id, number)
+);
+CREATE TABLE IF NOT EXISTS assignment_versions (
+  channel TEXT NOT NULL REFERENCES channels(name),
+  group_name TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  partition_count INTEGER NOT NULL,
+  strategy TEXT NOT NULL,
+  plan TEXT NOT NULL,
+  created REAL NOT NULL,
+  PRIMARY KEY(channel, group_name, version)
+);
+CREATE TABLE IF NOT EXISTS partition_owners (
+  channel TEXT NOT NULL,
+  group_name TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  partition INTEGER NOT NULL,
+  owner TEXT NOT NULL,
+  PRIMARY KEY(channel, group_name, version, partition)
+);
+CREATE INDEX IF NOT EXISTS partition_owner_lookup
+  ON partition_owners(channel, group_name, version, owner);
+CREATE TABLE IF NOT EXISTS group_members (
+  channel TEXT NOT NULL,
+  group_name TEXT NOT NULL,
+  worker TEXT NOT NULL,
+  seen REAL NOT NULL,
+  PRIMARY KEY(channel, group_name, worker)
 );
 CREATE TABLE IF NOT EXISTS journal (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

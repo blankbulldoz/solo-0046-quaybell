@@ -1,6 +1,6 @@
 import {$, TEXT, api, button, clock, node, notice, onForm, parse, rows, run, status} from './relay.js';
 
-const state = {channel: null, group: null, board: null, sequence: 0, retention: null, leases: new Map()};
+const state = {channel: null, group: null, board: null, assignment: null, sequence: 0, retention: null, leases: new Map()};
 const policyFields = ['lease_seconds', 'retry_seconds', 'max_attempts', 'retention_seconds'];
 const group = () => state.board?.groups.find(item => item.name === state.group);
 const channelPath = () => `/channels/${state.channel}`;
@@ -46,6 +46,7 @@ async function refresh() {
   $('channels').replaceChildren(...(topology.length ? topology.map(({name}) =>
     selectButton(name, name === state.channel, () => choose(name))) : [node('p', '暂无频道', 'muted')]));
   render();
+  await loadAssignment();
 }
 
 function render() {
@@ -58,7 +59,9 @@ function render() {
   $('groups').replaceChildren(...(board?.groups.length ? board.groups.map(item =>
     selectButton(item.paused ? `${item.name} · 暂停` : item.name, item.name === state.group, () => {
       state.group = item.name;
+      state.assignment = null;
       render();
+      loadAssignment();
     })) : [node('p', '暂无消费组', 'muted')]));
   $('claim').querySelector('button').disabled = !selected || selected.paused;
   $('toggle-group').disabled = !selected;
@@ -94,6 +97,62 @@ function render() {
         await refresh();
       })]), 4, '当前频道没有死信');
   renderLeases();
+  renderAssignment();
+}
+
+async function loadAssignment() {
+  if (!state.channel || !state.group) {
+    state.assignment = null;
+    renderAssignment();
+    return;
+  }
+  const channel = state.channel, groupName = state.group;
+  try {
+    const assignment = await api(`${channelPath()}/groups/${groupName}/assignments`);
+    if (state.channel === channel && state.group === groupName) state.assignment = assignment;
+  } catch {
+    if (state.channel === channel && state.group === groupName) state.assignment = null;
+  }
+  renderAssignment();
+}
+
+function renderAssignment() {
+  const meta = $('assignment-meta');
+  if (!meta) return;
+  if (!state.group) {
+    meta.textContent = '请选择消费组';
+    rows('partition-rows', [], 2, '尚未选择消费组');
+    rows('ownership-rows', [], 6, '尚未选择消费组');
+    return;
+  }
+  const assignment = state.assignment;
+  if (!assignment || !assignment.configured) {
+    meta.textContent = `${state.group} 尚未配置固定分片；当前任何 worker 都可按同键队首规则取件`;
+    rows('partition-rows', [], 2, '尚未配置分片');
+    rows('ownership-rows', [], 6, '暂无分片归属');
+    return;
+  }
+  meta.textContent = `分配版本 v${assignment.version}（generation ${assignment.generation ?? assignment.version}）`
+    + ` · ${assignment.partition_count} 分片 · 策略 ${assignment.strategy || 'round_robin'}`;
+  rows('partition-rows', (assignment.partitions || []).map(item =>
+    [`#${item.partition}`, item.owner]), 2, '无分片');
+  rows('ownership-rows', (assignment.keys || []).map(item => [
+    item.lane,
+    `#${item.partition}`,
+    item.owner || '—',
+    item.serving_worker || '—',
+    status(item.state),
+    item.open_attempt
+      ? `租约 v${item.open_attempt.assignment_version ?? '?'}${item.open_attempt.stale ? ' · 旧版' : ''}`
+      : `当前 v${assignment.version}`,
+  ]), 6, '暂无顺序键（发布消息后在此核对每键归属）');
+  const form = $('assignment-form');
+  const stamp = `${state.channel}/${state.group}/v${assignment.version}`;
+  if (form.dataset.stamp !== stamp) {
+    form.elements.partitions.value = assignment.partition_count;
+    form.elements.workers.value = [...new Set((assignment.partitions || []).map(p => p.owner))].join(',');
+    form.dataset.stamp = stamp;
+  }
 }
 
 function renderLeases() {
@@ -134,7 +193,9 @@ async function trace(id) {
     label.append(status(item.state));
     const entries = node('ul', '', 'trace-attempts');
     entries.append(...item.attempts.map(a => node('li',
-      `第 ${a.number} 次 · ${a.worker} · ${TEXT[a.outcome]} · ${clock(a.started)}${a.reason ? ` · ${a.reason}` : ''}`)));
+      `第 ${a.number} 次 · ${a.worker} · ${TEXT[a.outcome]} · ${clock(a.started)}`
+      + `${a.assignment_version != null ? ` · 分片代际 v${a.assignment_version}` : ''}`
+      + `${a.reason ? ` · ${a.reason}` : ''}`)));
     section.append(label, entries);
     return section;
   }));
@@ -192,6 +253,25 @@ $('toggle-group').addEventListener('click', () => run(async () => {
   await api(`${groupPath()}/pause`, {paused: !group().paused});
   await refresh();
 }));
+onForm('assignment-form', async values => {
+  if (!group()) return;
+  const workers = values.workers.split(',').map(item => item.trim()).filter(Boolean);
+  if (!workers.length) throw new Error('请至少填写一个工作进程');
+  const expected = state.assignment?.version;
+  const body = {partitions: Number(values.partitions), workers};
+  if (expected) body.expected = expected;
+  const reply = await api(`${groupPath()}/partitions`, body);
+  state.assignment = reply;
+  const fenced = reply.fenced_leases?.length ? `，围栏 ${reply.fenced_leases.length} 个失权旧租约` : '';
+  notice(`分片分配已提交：版本 v${reply.version}${fenced}`);
+  await refresh();
+});
+$('assignment-fence').addEventListener('click', () => run(async () => {
+  if (!group()) return;
+  const reply = await api(`${groupPath()}/fence`, {});
+  notice(reply.fenced_leases.length ? `已围栏 ${reply.fenced_leases.length} 个失权租约` : '没有需要围栏的失权租约');
+  await refresh();
+}, $('assignment-fence')));
 $('recover').addEventListener('click', () => run(async () => {
   const report = await api('/sweep', {limit: 100});
   notice(`已回收 ${report.recovered.length} 个过期租约`);

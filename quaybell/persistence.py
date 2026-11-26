@@ -15,6 +15,18 @@ class RelayPersistence:
                 raise RuntimeError(f'无法打开存储版本 {version}')
             db.execute('PRAGMA journal_mode=WAL')
             db.executescript(f'BEGIN IMMEDIATE;\n{SCHEMA}\nPRAGMA user_version={VERSION};\nCOMMIT;')
+            self._migrate(db)
+
+    @staticmethod
+    def _migrate(db):
+        columns = {row[1] for row in db.execute('PRAGMA table_info(attempts)')}
+        if 'assignment_version' not in columns:
+            db.execute('ALTER TABLE attempts ADD COLUMN assignment_version INTEGER')
+        if 'partition' not in columns:
+            db.execute('ALTER TABLE attempts ADD COLUMN partition INTEGER')
+        channel_columns = {row[1] for row in db.execute('PRAGMA table_info(channels)')}
+        if 'partition_count' not in channel_columns:
+            db.execute('ALTER TABLE channels ADD COLUMN partition_count INTEGER')
 
     @contextmanager
     def _connection(self):

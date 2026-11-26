@@ -22,7 +22,8 @@ def get(db, channel, group):
 
 def create(db, channel, raw, now):
     catalog.get(db, channel)
-    inputs.require(raw, ('name',), ('tags',))
+    if 'name' not in raw:
+        raise inputs.invalid('请求缺少 name')
     group = inputs.name(raw['name'], '消费组')
     tags = labels(raw.get('tags', {}))
     if any(item['name'] == group for item in for_channel(db, channel)):
@@ -30,7 +31,13 @@ def create(db, channel, raw, now):
     db.execute('INSERT INTO subscriptions(channel,name,tags,created) VALUES (?,?,?,?)',
                (channel, group, pack(tags), now))
     journal.append(db, channel, now, 'subscribed', {'group': group, 'tags': tags})
-    return get(db, channel, group)
+    record = get(db, channel, group)
+    if any(key in raw for key in ('partitions', 'partition_count', 'shards', 'workers', 'members',
+                                  'processes', 'assignees', 'consumers', 'assignment', 'assignments',
+                                  'mapping', 'partition_map', 'owner_map', 'owners')):
+        from . import assignments
+        record = record | {'assignment': assignments.configure(db, channel, group, raw, now)}
+    return record
 
 
 def pause(db, channel, group, raw, now):

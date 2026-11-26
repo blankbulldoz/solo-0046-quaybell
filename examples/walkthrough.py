@@ -2,9 +2,24 @@
 import argparse
 import logging
 
+from quaybell.assignments import partition_for
 from quaybell.codec import fingerprint, pack
 
 from .session import CHANNEL, GROUP, POLICY, envelope, session
+
+
+def separated_pair():
+    """找两个在 2 分片与 3 分片下都落在不同分片的顺序键，让演练归属确定。"""
+    names = [f'device-key-{i:02d}' for i in range(300)]
+    for hot in names:
+        for idle in names:
+            if hot == idle:
+                continue
+            if (partition_for(hot, 2) != partition_for(idle, 2)
+                    and partition_for(hot, 3) != partition_for(idle, 3)):
+                return hot, idle
+    raise AssertionError('找不到可分离的顺序键')
+
 
 
 def channel(client):
@@ -207,9 +222,85 @@ def export(client):
     return {'format': record['format'], 'sha256': digest}
 
 
+def partitions(client):
+    """2 分片调到 3：空闲键立即迁走，热键旧债务仍排在后继之前，版本/归属可核对。"""
+    client.channel(dict(lease_seconds=30, retry_seconds=1, max_attempts=8, retention_seconds=3600))
+    client.subscribe()
+    hot_lane, idle_lane = separated_pair()
+    # 初始：两个固定分片，两个进程各接一个（round_robin：p0->process-a, p1->process-b）
+    first = client.request(GROUP + '/partitions',
+                           {'partitions': 2, 'workers': ['process-a', 'process-b']})
+    assert first['version'] == 1 and len(first['partitions']) == 2
+    hot_p2, idle_p2 = partition_for(hot_lane, 2), partition_for(idle_lane, 2)
+    assert hot_p2 != idle_p2
+    hot_owner_v1 = first['partitions'][hot_p2]['owner']
+    idle_owner_v1 = first['partitions'][idle_p2]['owner']
+    # 热键两条（旧债务 + 后继），空闲键一条
+    client.publish('hot-debt', hot_lane)
+    client.publish('hot-successor', hot_lane)
+    client.publish('idle-one', idle_lane)
+    # 热键：领取 -> 拒绝退避 -> 再次领取，形成“旧版租约 + 重试”
+    debt = client.claim(1, worker=hot_owner_v1)[0]
+    assert debt['assignment_version'] == 1 and debt['partition'] == hot_p2
+    client.settle(debt, 'nack')
+    assert client.claim(1, worker=hot_owner_v1) == []
+    client.tick(1)
+    old_lease = client.claim(1, worker=hot_owner_v1)[0]
+    assert old_lease['lease']['number'] == 2 and old_lease['lease']['assignment_version'] == 1
+    # 空闲键由其属主处理并确认，进入 idle
+    idle_item = client.claim(1, worker=idle_owner_v1)[0]
+    assert idle_item['lane'] == idle_lane
+    client.settle(idle_item)
+    # 调到 3 分片：热键改属 process-b（旧进程失权 -> 围栏），空闲键改属新进程 process-c
+    hot_p3, idle_p3 = partition_for(hot_lane, 3), partition_for(idle_lane, 3)
+    remaining = next(p for p in range(3) if p not in (hot_p3, idle_p3))
+    plan = {str(hot_p3): 'process-b', str(idle_p3): 'process-c', str(remaining): 'process-a'}
+    second = client.request(GROUP + '/partitions',
+                            {'partitions': 3, 'assignment': plan, 'expected': 1})
+    assert second['version'] == 2 and len(second['fenced_leases']) == 1
+    assert second['fenced_leases'][0]['delivery_id'] == debt['delivery_id']
+    # 旧版凭据不能再处置（代际围栏）
+    client.settle(old_lease, 'ack', expected=409)
+    # 空闲键无需等待，新属主立刻可领
+    client.publish('idle-two', idle_lane)
+    moved_idle = client.claim(1, worker='process-c')
+    assert len(moved_idle) == 1 and moved_idle[0]['lane'] == idle_lane
+    # 热键新属主一次最多只拿到旧债务队首，绝不能越过它拿到后继
+    hot_batch = client.claim(3, worker='process-b')
+    assert [item['delivery_id'] for item in hot_batch] == [debt['delivery_id']]
+    takeover = hot_batch[0]
+    assert takeover['lease']['number'] == 3 and takeover['lease']['assignment_version'] == 2
+    client.request(GROUP + '/claim', {'worker': 'process-a', 'partition': hot_p3}, 403)
+    client.settle(takeover)
+    successor = client.claim(1, worker='process-b')[0]
+    assert successor['message_id'] != debt['message_id'] and successor['lane'] == hot_lane
+    client.settle(successor)
+    # 操作者核对版本与每键当前归属
+    board = client.request(GROUP + '/assignments')
+    assert board['version'] == 2 and board['partition_count'] == 3
+    owners = {row['lane']: row for row in board['keys']}
+    assert owners[hot_lane]['owner'] == 'process-b'
+    assert owners[idle_lane]['owner'] == 'process-c'
+    assert owners[hot_lane]['state'] == 'idle'
+    scoped = client.request(GROUP + '/keys?worker=process-b')
+    assert all(row['owner'] == 'process-b' for row in scoped['keys']) and \
+        any(row['lane'] == hot_lane for row in scoped['keys'])
+    auth = client.request(GROUP + '/authorize',
+                          {'worker': 'process-b', 'lanes': [hot_lane, idle_lane]})
+    assert {row['lane']: row['authorized'] for row in auth['decisions']} == \
+        {hot_lane: True, idle_lane: False}
+    trace = client.request(f"/messages/{debt['message_id']}")
+    leased = [event for event in trace['events'] if event['kind'] == 'leased']
+    assert [event['details'].get('assignment_version') for event in leased] == [1, 1, 2]
+    assert any(event['kind'] == 'lease_fenced' for event in trace['events'])
+    return {'version': board['version'], 'hot_key': hot_lane, 'idle_key': idle_lane,
+            'hot_owner': owners[hot_lane]['owner'], 'idle_owner': owners[idle_lane]['owner'],
+            'debt_delivery': debt['delivery_id'], 'successor': successor['delivery_id']}
+
+
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             redrive=redrive, board=board, retention=retention, export=export, partitions=partitions)
 
 
 def main():

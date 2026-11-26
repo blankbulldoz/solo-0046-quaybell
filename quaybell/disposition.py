@@ -14,5 +14,7 @@ def settle(db, key, raw, now, disposition):
     if attempt['outcome'] == disposition and attempt['reason'] == reason:
         return codec.unpack(attempt['receipt']) | {'repeated': True}
     if attempt['outcome'] != 'open' or item['state'] != 'leased' or attempt['expires'] <= now:
+        if attempt['reason'] and ('围栏' in attempt['reason']):
+            raise conflict('该租约属于已失效的旧分片属主版本，须由当前有权进程重新取件处置')
         raise conflict('租约已处置或超时')
     return outcomes.apply(db, item, attempt, disposition, reason, now) | {'repeated': False}

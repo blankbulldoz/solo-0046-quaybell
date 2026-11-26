@@ -3,16 +3,19 @@ import secrets
 from . import codec
 from .errors import conflict
 
-PUBLIC = 'id,delivery_id,number,worker,started,expires,outcome,finished,reason'
+PUBLIC = 'id,delivery_id,number,worker,started,expires,outcome,finished,reason,assignment_version,partition'
 
 
-def open_attempt(db, delivery, worker, now, seconds):
+def open_attempt(db, delivery, worker, now, seconds, assignment_version=None, partition=None):
     token = secrets.token_urlsafe(24)
     number = delivery['attempt_count'] + 1
-    key = db.execute('''INSERT INTO attempts(delivery_id,number,token_digest,worker,started,expires,outcome)
-                        VALUES (?,?,?,?,?,?,'open')''',
-                     (delivery['id'], number, codec.fingerprint(token), worker, now, now + seconds)).lastrowid
-    return dict(id=key, token=token, number=number, expires=now + seconds)
+    key = db.execute('''INSERT INTO attempts(delivery_id,number,token_digest,worker,started,expires,outcome,
+                                            assignment_version,partition)
+                        VALUES (?,?,?,?,?,?,'open',?,?)''',
+                     (delivery['id'], number, codec.fingerprint(token), worker, now, now + seconds,
+                      assignment_version, partition)).lastrowid
+    return dict(id=key, token=token, number=number, expires=now + seconds,
+                assignment_version=assignment_version, partition=partition)
 
 
 def by_token(db, delivery_id, token):

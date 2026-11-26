@@ -14,3 +14,7 @@ def missing(message):
 
 def conflict(message):
     return RelayError(409, 'conflict', message)
+
+
+def forbidden(message):
+    return RelayError(403, 'forbidden', message)

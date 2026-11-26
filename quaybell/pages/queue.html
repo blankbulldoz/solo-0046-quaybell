@@ -4,6 +4,27 @@
     <button type="button" class="quiet" id="recover" data-needs-channel>回收过期租约</button>
   </header>
   <div class="stats" id="stats" aria-label="投递分类计数"></div>
+  <section class="table-section" id="assignment-panel" data-needs-channel>
+    <div class="section-head">
+      <h2>分片归属与版本</h2>
+      <span class="muted" id="assignment-meta">未配置固定分片</span>
+    </div>
+    <form id="assignment-form" class="compact">
+      <div class="pair">
+        <label>分片数<input name="partitions" type="number" min="1" max="64" placeholder="2" required></label>
+        <label>工作进程（逗号分隔）<input name="workers" placeholder="process-a,process-b"></label>
+      </div>
+      <div class="button-row"><button type="submit">提交再分配</button><button type="button" id="assignment-fence" class="quiet">围栏失权租约</button></div>
+    </form>
+    <div class="scroll"><table>
+      <thead><tr><th scope="col">分片</th><th scope="col">当前属主进程</th></tr></thead>
+      <tbody id="partition-rows"></tbody>
+    </table></div>
+    <div class="scroll"><table>
+      <thead><tr><th scope="col">顺序键</th><th scope="col">分片</th><th scope="col">有权属主</th><th scope="col">实际处理</th><th scope="col">状态</th><th scope="col">租约代际</th></tr></thead>
+      <tbody id="ownership-rows"></tbody>
+    </table></div>
+  </section>
   <section class="table-section">
     <div class="section-head"><h2>消费组队列</h2><span class="muted" id="queue-group"></span></div>
     <div class="scroll"><table>
