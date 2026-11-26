@@ -33,6 +33,18 @@ class Session:
                 raise RuntimeError((path, response.code, expected, body))
             return body
 
+    def call(self, path, data=None):
+        """Like request but returns (status, body) instead of asserting."""
+        info = {} if data is None else dict(data=json.dumps(data).encode('utf-8'),
+                                             headers={'Content-Type': 'application/json'})
+        req = Request(self.base + path, **info)
+        try:
+            response = urlopen(req, timeout=5)
+        except HTTPError as exc:
+            response = exc
+        with response:
+            return response.code, json.load(response)
+
     def tick(self, amount):
         self.clock[0] += amount
 

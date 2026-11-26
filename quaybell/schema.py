@@ -78,4 +78,25 @@ CREATE INDEX IF NOT EXISTS attempt_deadline ON attempts(expires,id) WHERE outcom
 CREATE UNIQUE INDEX IF NOT EXISTS one_open_attempt ON attempts(delivery_id) WHERE outcome='open';
 CREATE INDEX IF NOT EXISTS message_channel ON messages(channel,published,id);
 CREATE INDEX IF NOT EXISTS journal_message ON journal(message_id,id);
+CREATE TABLE IF NOT EXISTS publication_candidates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  channel TEXT NOT NULL REFERENCES channels(name),
+  producer TEXT NOT NULL,
+  original_key TEXT,
+  original_message_id INTEGER,
+  original_snapshot TEXT,
+  candidate_key TEXT NOT NULL,
+  final_key TEXT,
+  lane TEXT NOT NULL,
+  envelope TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','confirmed','discarded')),
+  destinations TEXT,
+  receipt TEXT,
+  message_id INTEGER,
+  created REAL NOT NULL,
+  confirmed_at REAL
+);
+CREATE INDEX IF NOT EXISTS candidate_channel ON publication_candidates(channel,id);
+CREATE INDEX IF NOT EXISTS candidate_lookup ON publication_candidates(channel,producer,candidate_key,id);
 '''

@@ -1,6 +1,7 @@
 """Run one bounded middleware workflow through the public HTTP listener."""
 import argparse
 import logging
+import threading
 
 from quaybell.codec import fingerprint, pack
 
@@ -59,6 +60,118 @@ def publish(client):
     client.publish(expected=409, payload={'first': 2, 'second': 2})
     assert same == first | {'repeated': True}
     return same
+
+
+def review(client):
+    """409 review: resend the old alert vs. confirm a new candidate key.
+
+    Covers two differently labelled alerts taking the same candidate new key
+    concurrently while the original alert is pruned in between, plus the
+    envelope/destination/receipt binding and the no-silent-publish rule.
+    """
+    client.channel()
+    client.subscribe('alpha', tags={'kind': 'alpha'})
+    client.subscribe('beta', tags={'kind': 'beta'})
+    original = client.publish('clash-key', tags={'kind': 'alpha'})
+
+    # Identical republish and the explicit resend route both keep the receipt.
+    assert client.publish('clash-key', expected=200, tags={'kind': 'alpha'})['message_id'] \
+        == original['message_id']
+    code, resent = client.call(f"/messages/{original['message_id']}/resend", {})
+    assert (code, resent['message_id'], resent['repeated']) == (200, original['message_id'], True)
+
+    alert_a = {'producer': 'signal-source', 'key': 'clash-key', 'lane': 'coil-north',
+               'payload': {'alert': 'A'}, 'tags': {'kind': 'alpha'}}
+    alert_b = alert_a | {'payload': {'alert': 'B'}, 'tags': {'kind': 'beta'}}
+    code, conflict_a = client.call(CHANNEL + '/messages', alert_a)
+    assert code == 409 and conflict_a['review']['original']['message_id'] == original['message_id']
+    code, conflict_b = client.call(CHANNEL + '/messages', alert_b)
+    assert code == 409
+    # Two simultaneous reviews are non-reserving, so they suggest the same key.
+    assert conflict_a['review']['suggested_key'] == \
+        conflict_b['review']['suggested_key'] == 'clash-key-2'
+
+    code, candidate_a = client.call(CHANNEL + '/candidates',
+                                    alert_a | {'candidate_key': 'clash-key-2'})
+    code2, candidate_b = client.call(CHANNEL + '/candidates',
+                                     alert_b | {'candidate_key': 'clash-key-2'})
+    assert (code, code2) == (201, 201)
+    assert candidate_a['destinations'] == ['alpha']
+    assert candidate_b['destinations'] == ['beta']
+
+    # Pending candidates create no messages or deliveries.
+    assert [m['dedup_key'] for m in client.request(CHANNEL)['messages']] == ['clash-key']
+
+    # Ack and prune the original while both candidates wait unconfirmed.
+    taken = client.request(CHANNEL + '/groups/alpha/claim', {'worker': 'review', 'limit': 1})['items'][0]
+    client.settle(taken)
+    client.tick(11)
+    pruned = client.request(CHANNEL + '/retention', {})
+    assert pruned['removed'] == [original['message_id']]
+    assert client.request(CHANNEL + f"/candidates/{candidate_a['candidate_id']}")['original_state'] \
+        == 'pruned'
+
+    results = {}
+    barrier = threading.Barrier(2)
+
+    def confirm(name, candidate_id):
+        barrier.wait()
+        results[name] = client.call(CHANNEL + f"/candidates/{candidate_id}/confirm", {})
+
+    threads = [threading.Thread(target=confirm, args=('A', candidate_a['candidate_id'])),
+               threading.Thread(target=confirm, args=('B', candidate_b['candidate_id']))]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert sorted(code for code, _ in results.values()) == [201, 409], results
+    winner = 'A' if results['A'][0] == 201 else 'B'
+    loser = 'B' if winner == 'A' else 'A'
+    receipt = results[winner][1]
+    assert list(receipt['fanout']) == [{'A': 'alpha', 'B': 'beta'}[winner]]
+
+    # Repeated confirms, including concurrent ones, replay the stable receipt.
+    code, again = client.call(CHANNEL + f"/candidates/{receipt['candidate_id']}/confirm", {})
+    assert code == 200 and again['repeated'] is True
+    assert again['message_id'] == receipt['message_id'] and again['fanout'] == receipt['fanout']
+    replay = {}
+    replay_barrier = threading.Barrier(2)
+
+    def replay_one(index):
+        replay_barrier.wait()
+        replay[index] = client.call(f"/candidates/{receipt['candidate_id']}/confirm",
+                                    {'fingerprint': receipt['fingerprint']})
+
+    replays = [threading.Thread(target=replay_one, args=(i,)) for i in range(2)]
+    for thread in replays:
+        thread.start()
+    for thread in replays:
+        thread.join()
+    assert all(code == 200 and body['message_id'] == receipt['message_id']
+               for code, body in replay.values()), replay
+
+    # The loser re-reviews the fresh suggestion and confirms under a new key.
+    loser_id = candidate_a['candidate_id'] if loser == 'A' else candidate_b['candidate_id']
+    code, lost = results[loser]
+    assert code == 409 and lost['suggested_key'] == 'clash-key-3'
+    code, recovered = client.call(CHANNEL + f"/candidates/{loser_id}/confirm",
+                                  {'key': lost['suggested_key']})
+    assert code == 201 and list(recovered['fanout']) == [{'A': 'alpha', 'B': 'beta'}[loser]]
+    code, repeated_recovery = client.call(CHANNEL + f"/candidates/{loser_id}/confirm", {})
+    assert code == 200 and repeated_recovery['message_id'] == recovered['message_id']
+
+    # A fingerprint mismatch blocks confirmation; an abandoned candidate never publishes.
+    code, orphan = client.call(CHANNEL + '/candidates', envelope('orphan-key') | {'candidate_key': 'unused-key'})
+    assert code == 201
+    code, mismatch = client.call(CHANNEL + f"/candidates/{orphan['candidate_id']}/confirm",
+                                 {'fingerprint': '0' * 64})
+    assert code == 409 and mismatch['reason'] == 'envelope_mismatch'
+    board_keys = [m['dedup_key'] for m in client.request(CHANNEL)['messages']]
+    assert 'unused-key' not in board_keys
+    code, discarded = client.call(CHANNEL + f"/candidates/{orphan['candidate_id']}/discard", {})
+    assert code == 200 and discarded['status'] == 'discarded'
+    return {'winner': winner, 'receipt': receipt['message_id'],
+            'recovered': recovered['message_id'], 'pruned': pruned['removed']}
 
 
 def inspect(client):
@@ -208,6 +321,7 @@ def export(client):
 
 
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
+             review=review, conflict=review, republish=review, candidates=review,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
              redrive=redrive, board=board, retention=retention, export=export)
 

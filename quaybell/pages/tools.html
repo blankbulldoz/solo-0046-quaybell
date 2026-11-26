@@ -15,7 +15,18 @@
       <label>消息载荷<textarea name="payload" rows="3">{"reading":48,"unit":"mV"}</textarea></label>
       <div class="button-row"><button name="mode" value="preview" class="quiet">预查</button><button name="mode" value="messages">发布</button></div>
       <output class="muted" id="publication-result" aria-live="polite"></output>
+      <div class="candidate-bar" id="candidate-bar" hidden>
+        <span id="candidate-count" class="candidate-pill"></span>
+        <div id="candidate-list" class="candidate-list"></div>
+      </div>
     </form>
+    <dialog id="review-dialog" aria-labelledby="review-title">
+      <div class="dialog-head">
+        <h2 id="review-title">生产键冲突 · 复核与重新发布</h2>
+        <button type="button" id="review-close" class="quiet">关闭</button>
+      </div>
+      <div id="review-body" class="review-body"></div>
+    </dialog>
   </details>
   <details data-needs-channel>
     <summary>领取和应答</summary>

@@ -1,4 +1,4 @@
-from . import catalog, deadletters, evidence, inspection, overview, retention, routing
+from . import catalog, deadletters, evidence, inspection, overview, retention, reviews, routing
 from .protocol import Reply
 
 
@@ -13,6 +13,12 @@ def read(db, action, args, now):
         return Reply(inspection.trace(db, int(args[0])))
     if action == 'retention':
         return Reply(retention.plan(db, args[0], now))
+    if action == 'candidate_list':
+        return Reply(reviews.list_candidates(db, args[0]))
+    if action == 'candidate_get':
+        return Reply(reviews.get_candidate(db, int(args[1]), channel=args[0]))
+    if action == 'candidate_get_global':
+        return Reply(reviews.get_candidate(db, int(args[0])))
     if action == 'export':
         return Reply(evidence.export_trace(db, int(args[0]), now),
                      content_type='application/json; charset=utf-8',

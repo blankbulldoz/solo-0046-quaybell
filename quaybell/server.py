@@ -35,7 +35,11 @@ class RelayRequest(BaseHTTPRequestHandler):
         try:
             reply = self.resolve_route(method)
         except RelayError as exc:
-            reply = protocol.Reply({'error': exc.code, 'message': str(exc)}, exc.status)
+            payload = {'error': exc.code, 'message': str(exc)}
+            # Structured review/conflict details stay additive to the baseline
+            # {error, message} error contract.
+            payload.update(exc.info)
+            reply = protocol.Reply(payload, exc.status)
         except sqlite3.OperationalError as exc:
             if getattr(exc, 'sqlite_errorcode', 0) & 255 in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
                 reply = protocol.Reply({'error': 'busy', 'message': '中继存储繁忙，请稍后按原身份重试'}, 503)

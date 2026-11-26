@@ -1,4 +1,4 @@
-from . import catalog, claims, disposition, expiry, inputs, publication, redrive, retention, subscriptions
+from . import catalog, claims, disposition, expiry, inputs, publication, redrive, retention, reviews, subscriptions
 from .protocol import Reply
 
 
@@ -14,6 +14,17 @@ def write(db, action, args, raw, now):
     if action == 'publish':
         item = publication.publish(db, *args, raw, now)
         return Reply(item, 200 if item['repeated'] else 201)
+    if action == 'resend_message':
+        item = reviews.resend_message(db, int(args[0]), now)
+        return Reply(item, 200)
+    if action == 'candidate_create':
+        return Reply(reviews.create_candidate(db, args[0], raw, now), 201)
+    if action in ('candidate_confirm', 'candidate_confirm_global'):
+        candidate_id = int(args[-1])
+        item = reviews.confirm(db, candidate_id, raw, now)
+        return Reply(item, 200 if item.get('repeated') else 201)
+    if action in ('candidate_discard', 'candidate_discard_global'):
+        return Reply(reviews.discard(db, int(args[-1]), raw, now))
     if action == 'claim':
         return Reply(claims.claim(db, *args, raw, now))
     if action in ('ack', 'nack'):

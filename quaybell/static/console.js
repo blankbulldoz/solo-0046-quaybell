@@ -94,6 +94,7 @@ function render() {
         await refresh();
       })]), 4, '当前频道没有死信');
   renderLeases();
+  void loadCandidates();
 }
 
 function renderLeases() {
@@ -159,17 +160,295 @@ onForm('create-group', async ({name, tags}) => {
   await refresh();
   notice('消费组已添加');
 });
+function jsonPre(value) {
+  return node('pre', JSON.stringify(value, null, 2));
+}
+
+function fingerprintLine(digest) {
+  return node('p', `内容指纹 sha256:${digest}`, 'mono fingerprint');
+}
+
+function destinationView(doc) {
+  const wrap = node('div', '', 'chip-row');
+  const fanout = doc.fanout || doc.actual_destinations;
+  if (fanout) {
+    const entries = Object.entries(fanout);
+    if (!entries.length) wrap.append(node('span', '无匹配消费组（实际去向为空）', 'muted'));
+    for (const [groupName, deliveryId] of entries) {
+      const chip = node('span', '', 'chip chip-delivery');
+      chip.append(node('b', groupName), node('span', `→ 投递 #${deliveryId}`));
+      wrap.append(chip);
+    }
+    return wrap;
+  }
+  const names = doc.destinations_current || doc.destinations || doc.groups || [];
+  if (!names.length) wrap.append(node('span', '当前没有匹配消费组', 'muted'));
+  for (const name of names) wrap.append(node('span', name, 'chip'));
+  return wrap;
+}
+
+function receiptPanel(receipt) {
+  const box = node('div', '', 'receipt-box');
+  box.append(node('h4', '稳定回执（重复确认读取同一记录）'));
+  box.append(node('p', `消息 #${receipt.message_id} · 策略 v${receipt.policy}`, 'mono'));
+  box.append(destinationView({fanout: receipt.fanout}));
+  return box;
+}
+
+function showDialog() {
+  const dialog = $('review-dialog');
+  if (!dialog.open) dialog.showModal();
+}
+
+function openReview(review) {
+  showDialog();
+  renderConflict(review);
+}
+
+function openCandidate(doc) {
+  showDialog();
+  renderCandidate(doc);
+}
+
+function renderConflict(review) {
+  const dialog = $('review-dialog');
+  $('review-title').textContent = `键冲突复核 · ${review.producer}/${review.key}`;
+  const body = $('review-body');
+  body.replaceChildren();
+  body.append(node('p',
+    '这个生产键已绑定另一个信封，已承诺内容不会被覆盖。请核对两侧内容：重发原告警会复用原稳定回执；右侧确实是新告警时，用候选新键走显式确认。',
+    'muted'));
+  const grid = node('div', '', 'review-grid');
+
+  const oldCard = node('section', '', 'review-card old');
+  oldCard.append(node('h3', '① 原告警（已落库）'));
+  const original = review.original;
+  if (original) {
+    oldCard.append(node('p', `消息 #${original.message_id} · ${clock(original.published)} · 策略 v${original.policy}`, 'mono'));
+    oldCard.append(jsonPre(original.envelope));
+    oldCard.append(fingerprintLine(original.fingerprint));
+    oldCard.append(node('h4', '稳定回执与最初去向'));
+    oldCard.append(destinationView({fanout: original.fanout}));
+    oldCard.append(button(`重发旧告警 · 复用回执 #${original.message_id}`, async () => {
+      const reply = await api(`/messages/${original.message_id}/resend`, {});
+      notice(reply.repeated
+        ? `已重发旧告警，复用稳定回执 #${reply.message_id}`
+        : `原记录已不存在，按原信封发布为新消息 #${reply.message_id}`);
+      dialog.close();
+      await refresh();
+      await loadCandidates();
+    }, {className: 'primary'}));
+  } else {
+    oldCard.append(node('p', review.original_state === 'pruned'
+      ? '原告警已被保留清理，旧稳定回执已失效。'
+      : '该键当前没有已提交消息（可能已被清理）。', 'race-error'));
+  }
+
+  const incoming = review.incoming || {};
+  const newCard = node('section', '', 'review-card incoming');
+  newCard.append(node('h3', '② 表单里的告警（尚未发布）'));
+  newCard.append(jsonPre(incoming.envelope));
+  newCard.append(fingerprintLine(incoming.fingerprint || review.fingerprint));
+  newCard.append(node('h4', '预演去向（按当前订阅，确认时重新计算）'));
+  newCard.append(destinationView({destinations: incoming.destinations || review.destinations}));
+  const keyLabel = node('label', '候选新键（可修改）', 'field-label');
+  const keyInput = node('input');
+  keyInput.id = 'review-new-key';
+  keyInput.value = review.suggested_key || review.candidate_key || '';
+  keyInput.autocomplete = 'off';
+  keyLabel.append(keyInput);
+  newCard.append(keyLabel);
+  newCard.append(button('建立候选复核单（这一步仍不会发布）', async () => {
+    const candidateKey = $('review-new-key').value.trim();
+    const payload = {...incoming.envelope_request, candidate_key: candidateKey};
+    if (original?.message_id) payload.original_message_id = original.message_id;
+    const candidate = await api(`${channelPath()}/candidates`, payload);
+    notice(`候选单 #${candidate.candidate_id} 已建立：未经确认不会产生消息`);
+    renderCandidate(candidate);
+    await loadCandidates();
+  }, {className: 'primary'}));
+  newCard.append(node('p', '建立后还有确认步骤，把最终信封、实际去向和稳定回执关联到同一张候选单。', 'muted'));
+
+  grid.append(oldCard, newCard);
+  body.append(grid);
+}
+
+function renderCandidate(candidate, problemBody = null) {
+  const dialog = $('review-dialog');
+  $('review-title').textContent = `发布候选单 #${candidate.candidate_id}`;
+  const body = $('review-body');
+  body.replaceChildren();
+
+  const banner = node('div', '', `candidate-banner ${candidate.status}`);
+  if (candidate.status === 'confirmed') {
+    banner.append(node('strong', '已确认发布 · 最终信封、实际去向与稳定回执已关联'));
+  } else if (candidate.status === 'discarded') {
+    banner.append(node('strong', '候选已放弃 · 从未发布'));
+  } else {
+    banner.append(node('strong', '待确认 · 尚未发布，不会自动产生消息或投递'));
+  }
+  body.append(banner);
+
+  if (problemBody) {
+    const errorBox = node('div', '', 'race-error');
+    errorBox.append(node('strong', problemBody.message || '确认未成功'));
+    const suggested = problemBody.suggested_key || problemBody.review?.suggested_key;
+    if (suggested) {
+      const row = node('div', '', 'button-row');
+      row.append(node('span', `该键刚刚被另一条告警占用，可改用未占用键：`, 'muted'));
+      row.append(button(`采用建议键 ${suggested}`, () => {
+        $('cand-final-key').value = suggested;
+      }, {className: 'quiet mini'}));
+      errorBox.append(row);
+    }
+    body.append(errorBox);
+  }
+
+  if (candidate.original_state === 'pruned') {
+    const snapshotId = candidate.original?.message_id
+      || candidate.original_snapshot?.message_id || candidate.original_message_id;
+    const warn = node('p', '', 'prune-note');
+    warn.append(node('strong', '原告警在等待期间已被清理。'));
+    warn.append(document.createTextNode(
+      ` 旧回执${snapshotId ? ` #${snapshotId}` : ''} 已失效，不能再“重发复用”；本次确认会生成全新的稳定回执。`));
+    body.append(warn);
+  }
+
+  const grid = node('div', '', 'review-grid');
+  const envelopeCard = node('section', '', 'review-card');
+  envelopeCard.append(node('h3', '最终信封'));
+  envelopeCard.append(jsonPre(candidate.final_envelope || candidate.envelope));
+  envelopeCard.append(fingerprintLine(candidate.fingerprint));
+  grid.append(envelopeCard);
+
+  const sideCard = node('section', '', 'review-card');
+  const keyLabel = node('label', '最终生产键（确认时生效）', 'field-label');
+  const keyInput = node('input');
+  keyInput.id = 'cand-final-key';
+  keyInput.autocomplete = 'off';
+  keyInput.disabled = candidate.status !== 'pending';
+  keyInput.value = problemBody?.suggested_key
+    || candidate.final_key || candidate.key || candidate.candidate_key || '';
+  keyLabel.append(keyInput);
+  sideCard.append(keyLabel);
+  if (candidate.reuses_released_key) {
+    sideCard.append(node('p', '原键已随清理释放；使用该键将创建一条全新消息与新回执，而不是复用旧回执。', 'prune-note'));
+  }
+  sideCard.append(node('h4', '实际去向'));
+  sideCard.append(destinationView(candidate));
+  if (candidate.status === 'pending') {
+    sideCard.append(node('p', '待确认期间显示按当前订阅预演的组；确认事务内会重新匹配，并记录真实投递 ID。', 'muted'));
+  }
+  if (candidate.receipt) sideCard.append(receiptPanel(candidate.receipt));
+
+  const actions = node('div', '', 'button-row review-actions');
+  if (candidate.status === 'pending') {
+    actions.append(button('确认发布 · 关联最终信封 / 实际去向 / 稳定回执', async () => {
+      const wanted = $('cand-final-key').value.trim();
+      const payload = {fingerprint: candidate.fingerprint};
+      if (wanted && wanted !== candidate.candidate_key) payload.key = wanted;
+      try {
+        const reply = await api(`${channelPath()}/candidates/${candidate.candidate_id}/confirm`, payload);
+        notice(reply.repeated
+          ? `重复确认：返回同一稳定回执 #${reply.message_id}`
+          : `已确认发布，稳定回执 #${reply.message_id}`);
+        renderCandidate(reply);
+        await refresh();
+        await loadCandidates();
+      } catch (problem) {
+        if (problem.status === 409 && problem.body?.review) {
+          const fresh = await api(`${channelPath()}/candidates/${candidate.candidate_id}`);
+          renderCandidate(fresh, problem.body);
+          return;
+        }
+        throw problem;
+      }
+    }, {className: 'primary'}));
+    actions.append(button('放弃候选', async () => {
+      await api(`${channelPath()}/candidates/${candidate.candidate_id}/discard`, {});
+      notice(`候选单 #${candidate.candidate_id} 已放弃，未发布任何消息`);
+      dialog.close();
+      await loadCandidates();
+    }, {className: 'danger'}));
+  } else if (candidate.status === 'confirmed') {
+    actions.append(button('再次提交确认（验证稳定回执）', async () => {
+      const reply = await api(`${channelPath()}/candidates/${candidate.candidate_id}/confirm`,
+        {fingerprint: candidate.fingerprint});
+      notice(`稳定回执不变：消息 #${reply.message_id}，${Object.keys(reply.fanout || {}).length} 个去向`);
+      renderCandidate(reply);
+    }));
+    if (candidate.message_id) {
+      actions.append(button('查看消息轨迹', async () => {
+        dialog.close();
+        await trace(candidate.message_id);
+      }, {className: 'quiet'}));
+    }
+    actions.append(button('完成', () => dialog.close(), {className: 'primary'}));
+  } else {
+    actions.append(button('关闭', () => dialog.close(), {className: 'primary'}));
+  }
+  sideCard.append(actions);
+  grid.append(sideCard);
+  body.append(grid);
+}
+
+async function loadCandidates() {
+  const bar = $('candidate-bar');
+  if (!bar) return;
+  const channel = state.channel;
+  if (!channel) { bar.hidden = true; return; }
+  let reply;
+  try {
+    reply = await api(`${channelPath()}/candidates`);
+  } catch {
+    bar.hidden = true;
+    return;
+  }
+  if (state.channel !== channel) return;
+  const pending = (reply.candidates || []).filter(item => item.pending);
+  bar.hidden = pending.length === 0;
+  $('candidate-count').textContent = pending.length
+    ? `${pending.length} 个未确认候选：仅暂存信封，不会悄悄发布`
+    : '';
+  $('candidate-list').replaceChildren(...pending.slice(0, 6).map(item =>
+    button(`#${item.id} · ${item.candidate_key}`, async () => {
+      const doc = await api(`${channelPath()}/candidates/${item.id}`);
+      openCandidate(doc);
+    }, {className: 'quiet mini'})));
+}
+
+$('review-close').addEventListener('click', () => $('review-dialog').close());
+$('review-dialog').addEventListener('click', event => {
+  if (event.target === $('review-dialog')) $('review-dialog').close();
+});
+$('review-dialog').addEventListener('close', () => { void loadCandidates(); });
+
 onForm('publish', async (values, mode) => {
   const channel = state.channel;
-  const reply = await api(`${channelPath()}/${mode || 'messages'}`, {
-    ...values, tags: parse(values.tags, '标签'), payload: parse(values.payload, '载荷'),
-    delay_seconds: Number(values.delay_seconds),
-  });
+  let reply;
+  try {
+    reply = await api(`${channelPath()}/${mode || 'messages'}`, {
+      ...values, tags: parse(values.tags, '标签'), payload: parse(values.payload, '载荷'),
+      delay_seconds: Number(values.delay_seconds),
+    });
+  } catch (problem) {
+    // A key clash opens the review/re-publication workflow instead of leaving
+    // the operator with only an error notice.
+    if (mode !== 'preview' && problem.status === 409 && problem.body?.review) {
+      if (state.channel !== channel) return;
+      openReview(problem.body.review);
+      return;
+    }
+    throw problem;
+  }
   if (state.channel !== channel) return;
   $('publication-result').textContent = mode === 'preview'
     ? (reply.groups.length ? `匹配：${reply.groups.join('、')}` : '当前无匹配消费组')
     : `消息 #${reply.message_id} · ${reply.repeated ? '已复用原回执' : '已发布'} · ${Object.keys(reply.fanout).length} 个消费组`;
-  if (mode !== 'preview') await refresh();
+  if (mode !== 'preview') {
+    await refresh();
+    await loadCandidates();
+  }
 });
 onForm('claim', async ({worker, limit}) => {
   if (!group()) return;
