@@ -156,13 +156,56 @@ def dead(client):
 
 
 def redrive(client):
-    first = dead(client)
+    client.channel(POLICY | {'max_attempts': 1})
+    client.subscribe()
+    source = client.publish('signal-1', 'coil-north')
+    client.settle(client.claim()[0], 'nack')
+    source_id = source['fanout']['oscillator']
+
+    leased = client.publish('signal-2', 'coil-north')
+    held = client.claim()[0]
+    delayed = client.publish('signal-3', 'coil-north', delay_seconds=20)
+    aside = client.publish('signal-4', 'coil-south')
+
     client.request(CHANNEL + '/policy', POLICY | {'expected': 1}, 201)
-    path = f"/deliveries/{first['id']}/redrive"
+    path = f'/deliveries/{source_id}/redrive'
     new = client.request(path, {}, 201)
-    assert client.request(path, {}) == new | {'repeated': True}
-    assert client.claim()[0]['policy'] == 2
-    return new
+    judgement, queue = new['judgement'], new['queue']
+    assert new['policy'] == 2 and new['repeated'] is False
+    assert judgement['prior_debts'] == 2 and judgement['position'] == 3
+    assert judgement['preceding_ids'] == [held['delivery_id'], delayed['fanout']['oscillator']]
+    assert judgement['blocking']['delivery_id'] == held['delivery_id']
+    assert judgement['blocking']['cause'] == 'leased'
+    assert aside['fanout']['oscillator'] not in judgement['preceding_ids']
+    assert queue['ahead'] == 2 and queue['position'] == 3 and queue['cause'] == 'blocked'
+
+    client.settle(held)
+    replay = client.request(path, {})
+    assert replay['repeated'] is True and replay['delivery_id'] == new['delivery_id']
+    assert replay['judgement'] == judgement and replay['submitted_at'] == new['submitted_at']
+    assert replay['queue']['ahead'] == 1 and replay['queue']['departed_preceding'] == [held['delivery_id']]
+    assert replay['queue']['head_id'] == delayed['fanout']['oscillator']
+    assert replay['queue']['head']['cause'] == 'delayed'
+
+    dead_rows = client.request(CHANNEL + '/dead')['items']
+    assert len(dead_rows) == 1 and dead_rows[0]['redrive']['judgement'] == judgement
+    assert dead_rows[0]['redrive']['queue']['cause'] == 'blocked'
+
+    trace = client.request(f"/messages/{source['message_id']}")
+    child_view = next(item for item in trace['deliveries'] if item['id'] == new['delivery_id'])
+    assert child_view['redrive']['judgement'] == judgement
+    assert child_view['redrive']['queue']['position'] == 2
+
+    client.tick(20)
+    head = client.claim()[0]
+    assert head['delivery_id'] == delayed['fanout']['oscillator']
+    client.settle(head)
+    advanced = client.request(path, {})
+    assert advanced['judgement'] == judgement
+    assert advanced['queue']['ahead'] == 0 and advanced['queue']['reached'] is True
+    assert advanced['queue']['claimable'] is True and advanced['queue']['cause'] == 'ready'
+    assert new['delivery_id'] in [item['delivery_id'] for item in client.claim(3)]
+    return {'new': new, 'replay': replay, 'advanced': advanced}
 
 
 def board(client):

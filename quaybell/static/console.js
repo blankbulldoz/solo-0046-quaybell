@@ -6,6 +6,28 @@ const group = () => state.board?.groups.find(item => item.name === state.group);
 const channelPath = () => `/channels/${state.channel}`;
 const groupPath = () => `${channelPath()}/groups/${state.group}`;
 const traceLink = (id, label = `#${id}`) => button(label, () => trace(id), {className: 'link'});
+const LEGACY_JUDGEMENT = '旧回执，没有提交时判断';
+
+function judgementText(judgement) {
+  if (!judgement || !judgement.recorded) return LEGACY_JUDGEMENT;
+  const blocking = judgement.blocking
+    ? `挡在 #${judgement.blocking.delivery_id}（${TEXT[judgement.blocking.cause]}）`
+    : '前方没有未处置投递';
+  const paused = judgement.paused ? '，当时该组暂停取件' : '';
+  return `提交时第 ${judgement.position} 位，前有 ${judgement.prior_debts} 条同键先行债务，${blocking}${paused}`;
+}
+
+function queueText(queue) {
+  if (!queue) return '—';
+  const where = queue.in_queue ? `第 ${queue.position} 位（前有 ${queue.ahead}）` : '已不在未处置队列';
+  const cause = queue.cause ? ` · ${TEXT[queue.cause]}` : '';
+  const blocking = queue.blocking
+    ? ` · 当前挡在 #${queue.blocking.delivery_id}（${TEXT[queue.blocking.cause]}）` : '';
+  const departed = queue.departed_preceding?.length
+    ? ` · 已越过 ${queue.departed_preceding.map(id => `#${id}`).join('、')}` : '';
+  return `${where}${cause}${blocking}${departed}`;
+}
+
 
 function selectButton(name, active, action) {
   const control = button(name, async () => {
@@ -77,7 +99,8 @@ function render() {
     return card;
   }));
   rows('queue-rows', (selected?.sample || []).map(item => [traceLink(item.message_id, `#${item.id}`),
-    item.lane, status(item.cause), `#${item.head_id}`, clock(item.ready_at)]), 5,
+    item.lane, status(item.cause), item.position == null ? '—' : `第 ${item.position} 位`,
+    `#${item.head_id}`, clock(item.ready_at)]), 6,
     selected ? '当前消费组没有未完成投递' : '请选择已有消费组');
   const messages = board?.messages || [];
   $('message-total').textContent = messages.length ? `最近 ${messages.length} 条` : '';
@@ -86,13 +109,15 @@ function render() {
   const dead = board?.dead || [];
   $('dead-total').textContent = dead.length ? `最近 ${dead.length} 条` : '';
   rows('dead-rows', dead.map(item => [traceLink(item.message_id, `#${item.id}`), item.group_name,
-    item.last_attempt.reason, item.redriven_as ? `已追加 #${item.redriven_as}` :
+    item.last_attempt.reason,
+    item.redrive ? `后继 #${item.redrive.delivery_id} · ${judgementText(item.redrive.judgement)}` : '—',
+    item.redrive ? queueText(item.redrive.queue) :
       button('重投', async () => {
         const result = await api(`/deliveries/${item.id}/redrive`, {});
-        notice(`重投记录 #${result.delivery_id}`);
+        notice(`重投记录 #${result.delivery_id}：${judgementText(result.judgement)}`);
         resetRetention();
         await refresh();
-      })]), 4, '当前频道没有死信');
+      })]), 5, '当前频道没有死信');
   renderLeases();
 }
 
@@ -136,6 +161,11 @@ async function trace(id) {
     entries.append(...item.attempts.map(a => node('li',
       `第 ${a.number} 次 · ${a.worker} · ${TEXT[a.outcome]} · ${clock(a.started)}${a.reason ? ` · ${a.reason}` : ''}`)));
     section.append(label, entries);
+    if (item.redrive) {
+      section.append(
+        node('p', `重投提交时：${judgementText(item.redrive.judgement)}`, 'muted'),
+        node('p', `现在队列：${queueText(item.redrive.queue)}`, 'muted'));
+    }
     return section;
   }));
   if (!facts.deliveries.length) $('trace-deliveries').append(node('p', '发布时没有匹配消费组', 'muted'));

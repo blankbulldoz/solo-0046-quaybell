@@ -8,9 +8,9 @@ def read(db, action, args, now):
     if action == 'board':
         return Reply(overview.board(db, args[0], now))
     if action == 'dead':
-        return Reply({'items': deadletters.list_recent(db, args[0])})
+        return Reply({'items': deadletters.list_recent(db, args[0], now)})
     if action == 'trace':
-        return Reply(inspection.trace(db, int(args[0])))
+        return Reply(inspection.trace(db, int(args[0]), now))
     if action == 'retention':
         return Reply(retention.plan(db, args[0], now))
     if action == 'export':

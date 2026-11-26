@@ -15,4 +15,4 @@ def board(db, channel, now):
         summary.append(group | {'counts': dict(counts), 'sample': sample})
     return {'channel': channel, 'observed_at': now, 'policy': policy.read(db, channel),
             'groups': summary, 'messages': inspection.recent(db, channel),
-            'dead': deadletters.list_recent(db, channel)}
+            'dead': deadletters.list_recent(db, channel, now)}

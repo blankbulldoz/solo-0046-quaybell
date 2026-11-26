@@ -1,4 +1,4 @@
-from . import attempts, catalog, delivery
+from . import attempts, catalog, delivery, redrive
 from .errors import conflict
 
 
@@ -9,7 +9,7 @@ def get(db, key):
     return item
 
 
-def list_recent(db, channel, limit=50):
+def list_recent(db, channel, now, limit=50):
     catalog.get(db, channel)
     rows = db.execute(delivery.DELIVERY + " WHERE m.channel=? AND d.state='dead' ORDER BY d.id DESC LIMIT ?",
                       (channel, limit))
@@ -17,5 +17,8 @@ def list_recent(db, channel, limit=50):
     for row in rows:
         child = db.execute('SELECT id FROM deliveries WHERE parent_id=?', (row['id'],)).fetchone()
         history = attempts.for_delivery(db, row['id'])
-        result.append(dict(row) | {'last_attempt': history[-1], 'redriven_as': child['id'] if child else None})
+        result.append(dict(row) | {'last_attempt': history[-1],
+                                   'redriven_as': child['id'] if child else None,
+                                   'redrive': redrive.detail(db, row, row['id'], child['id'], now)
+                                              if child else None})
     return result

@@ -32,7 +32,7 @@ python3 -m quaybell --demo
 | `/deliveries/{id}/nack` | POST | `token` 和 `reason` |
 | `/sweep` | POST | `{}` 或 `limit`，按原截止时间回收全局租约 |
 | `/channels/{channel}/dead` | GET | 最近 50 个失败投递及最后一次尝试 |
-| `/deliveries/{id}/redrive` | POST | `{}`，使用当前策略追加一个后继投递 |
+| `/deliveries/{id}/redrive` | POST | `{}`，使用当前策略追加一个后继投递；回执分列 `judgement`（提交时冻结）与 `queue`（读取时位置） |
 | `/messages/{id}` | GET | 信封、分发、尝试、消息级处理记录 |
 | `/messages/{id}/evidence` | GET | `quaybell-trace/1` JSON 下载，摘要针对除 `sha256` 之外的规范化内容 |
 | `/channels/{channel}/retention` | GET / POST | 候选复核，或以 `{}` / `limit` 清理实际合格项 |
