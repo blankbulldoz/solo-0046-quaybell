@@ -1,4 +1,4 @@
-from . import catalog, inputs, journal
+from . import catalog, forensics, inputs, journal
 
 
 def eligible(db, channel, now, limit):
@@ -23,4 +23,8 @@ def prune(db, channel, raw, now):
     db.executemany('DELETE FROM messages WHERE id=?', [(key,) for key in keys])
     if keys:
         journal.append(db, channel, now, 'pruned', {'message_ids': keys})
-    return {'removed': keys, 'observed_at': now}
+    result = {'removed': keys, 'observed_at': now}
+    expired_audits = forensics.expire_due(db, channel, now)
+    if expired_audits:
+        result['expired_audit_receipts'] = expired_audits
+    return result

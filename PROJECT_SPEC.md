@@ -10,11 +10,12 @@ Quaybell 是面向内部服务集成的持久消息中间件。应用通过 HTTP
 - 暂停只影响之后的取件。租约凭据绑定一次尝试，在到期时刻失效。确认和明确拒绝可重试，相同请求读取已记录结果。客户仍须按业务需要自行去重其外部副作用。
 - 明确拒绝的退避以处置时间起算，超时退避以租约截止时间起算。退避从原策略初始值指数增长，最长一小时。尝试数用尽时，投递进入死信。重投追加一条本组投递，绑定当前策略并加入所在顺序键的队尾。每条死信只追加一个直接后继，后继可独立失败。
 - 清理时按消息发布时绑定的保留秒数比较年龄，并检查整条消息的所有派生分发。清理在写事务内重新计算，删除原信封、原回执、尝试和消息级审计。之后原生产键可复用。频道级清理记录保留被删 ID。
+- 发布取证在发布事务内冻结原回执、信封标签以及当时全部组规则和逐键匹配结论，零匹配也形成凭证。取证记录独立于消息且不按生产键设唯一约束，因此消息清理后仍可在指定审计期内还原依据，也不会永久占死生产键。审计凭证未启用或已超期的历史只能报告可证明的清理痕迹，不得用当前拓扑追认当时规则。
 - 租约、公示时间和就绪时间都是 Unix 秒。同步 API 返回 JSON。证据导出绑定一个观察时间和读取快照，去除租约凭据并提供内容摘要。
 
 ## 职责
 
-`catalog`、`policy` 和 `subscriptions` 管辖拓扑与版本；`envelope`、`routing` 和 `publication` 从信封生成分发；`delivery`、`eligibility`、`attempts` 和 `claims` 一起决定谁能领取；`disposition`、`expiry` 和 `outcomes` 确保处置及重试一致；`inspection`、`overview`、`retention` 和 `evidence` 提供查询和保留处置。`persistence` 定义 SQLite 事务边界，接入层负责请求体和响应，控制台使用单页的公开 JSON 接口。
+`catalog`、`policy` 和 `subscriptions` 管辖拓扑与版本；`envelope`、`routing` 和 `publication` 从信封生成分发；`delivery`、`eligibility`、`attempts` 和 `claims` 一起决定谁能领取；`disposition`、`expiry` 和 `outcomes` 确保处置及重试一致；`inspection`、`overview`、`retention`、`evidence` 和 `forensics` 提供查询、保留处置与发布回执审计。`persistence` 定义 SQLite 事务边界，接入层负责请求体和响应，控制台使用单页的公开 JSON 接口。
 
 ## 验证边界
 

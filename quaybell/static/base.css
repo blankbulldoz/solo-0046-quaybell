@@ -124,6 +124,7 @@ output { white-space: pre-wrap; overflow-wrap: anywhere; }
 dialog { width: min(700px, 92vw); max-height: 88vh; padding: 16px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); }
 dialog::backdrop { background: #15282177; }
 pre { padding: 10px; border-radius: 5px; background: #eef3ed; white-space: pre-wrap; overflow-wrap: anywhere; }
+.audit-result { max-height: 320px; overflow: auto; margin: 8px 0 0; font-size: .76rem; }
 .timeline { padding-left: 26px; }
 .timeline li { margin: 6px 0; }
 .trace-attempts { padding-left: 20px; color: var(--muted); }

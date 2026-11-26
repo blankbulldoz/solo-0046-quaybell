@@ -207,9 +207,109 @@ def export(client):
     return {'format': record['format'], 'sha256': digest}
 
 
+def audit(client):
+    # A historical publication before audit credentials were enabled.
+    client.request('/channels', {
+        'name': 'wire-gate', 'policy': POLICY,
+        'audit': {'enabled': False, 'retention_seconds': 3600},
+    }, 201)
+    legacy = client.publish('legacy-before-audit', tags={'era': 'pre-audit'})
+
+    # Later publications have a sealed snapshot of tags and current group rules.
+    client.request(CHANNEL + '/audit/config',
+                   {'enabled': True, 'retention_seconds': 3600}, 201)
+    client.subscribe('rule-red', {'color': 'red'})
+    matched = client.publish('explained-match', tags={'color': 'red'})
+    old_zero = client.publish('released-key', tags={'color': 'blue'})
+
+    # Disposition lets short retention remove every original message/delivery.
+    taken = client.request(CHANNEL + '/groups/rule-red/claim',
+                           {'worker': 'audit-worker', 'limit': 1})['items'][0]
+    client.request(f"/deliveries/{taken['delivery_id']}/ack",
+                   {'token': taken['lease']['token']})
+    client.tick(11)
+    pruned = client.request(CHANNEL + '/retention', {})
+    assert set([legacy['message_id'], matched['message_id'], old_zero['message_id']]) \
+        <= set(pruned['removed'])
+
+    # These groups are intentionally created after the original publication.
+    client.subscribe('rule-blue-later', {'color': 'blue'})
+    client.subscribe('rule-green-new', {'route': 'green'})
+
+    # The production key is reusable after pruning.  This is a genuinely new
+    # envelope and therefore must not be treated as a repeated receipt.
+    new_hit = client.publish('released-key', expected=201,
+                            payload={'revision': 'new-envelope'}, tags={'route': 'green'})
+    assert new_hit['repeated'] is False
+    assert list(new_hit['fanout']) == ['rule-green-new']
+
+    # A fresh preview of the OLD tags is contaminated by the later blue rule.
+    preview_old = client.request(CHANNEL + '/preview',
+                                 envelope('preview-only', tags={'color': 'blue'}))
+    assert preview_old['groups'] == ['rule-blue-later']
+
+    legacy_audit = client.request(f"/messages/{legacy['message_id']}/audit")
+    matched_audit = client.request(f"/messages/{matched['message_id']}/audit")
+    zero_audit = client.request(f"/messages/{old_zero['message_id']}/audit")
+    new_audit = client.request(f"/messages/{new_hit['message_id']}/audit")
+
+    assert legacy_audit['status'] == 'audit_credential_not_enabled'
+    assert legacy_audit['available'] is False
+    assert legacy_audit['routing_provable'] is False
+    assert legacy_audit['prune_record'] is not None
+    assert legacy_audit['tags'] is None
+
+    assert matched_audit['status'] == 'verified' and matched_audit['digest_matches']
+    assert matched_audit['original_receipt'] == matched
+    assert matched_audit['matched_groups'] == ['rule-red']
+    assert matched_audit['original_receipt']['fanout'] == {'rule-red': 1}
+
+    assert zero_audit['status'] == 'verified' and zero_audit['digest_matches']
+    assert zero_audit['original_receipt'] == old_zero
+    assert zero_audit['matched_groups'] == []
+    assert zero_audit['original_receipt']['fanout'] == {}
+    original_rules = {item['group'] for item in zero_audit['routing_basis']['groups_at_publication']}
+    assert original_rules == {'rule-red'}
+    assert zero_audit['current_topology']['current_preview_groups'] == ['rule-blue-later']
+    assert zero_audit['current_topology']['would_include_later_groups'] is True
+    assert set(zero_audit['current_topology']['groups_created_after_publication']) == \
+        {'rule-blue-later', 'rule-green-new'}
+
+    assert new_audit['matched_groups'] == ['rule-green-new']
+
+    by_key = client.request(CHANNEL + '/forensics',
+                            {'producer': 'signal-source', 'key': 'released-key'})
+    assert [item['message_id'] for item in by_key['records']] == \
+        [old_zero['message_id'], new_hit['message_id']]
+    assert [item['matched_groups'] for item in by_key['records']] == [[], ['rule-green-new']]
+
+    by_get = client.request(CHANNEL + '/forensics?key=released-key')
+    assert by_get['count'] == 2
+    by_period = client.request(CHANNEL + '/forensics', {
+        'start': 1_730_000_000, 'end': 1_730_000_100,
+    })
+    assert {item['message_id'] for item in by_period['records']} == \
+        {legacy['message_id'], matched['message_id'], old_zero['message_id'], new_hit['message_id']}
+
+    credential = client.request(f"/audit-receipts/{zero_audit['audit_id']}")
+    assert credential['status'] == 'verified' and credential['sha256'] == zero_audit['sha256']
+    evidence = client.request(f"/messages/{old_zero['message_id']}/evidence")
+    assert evidence['format'] == 'quaybell-publication-audit/1'
+    return {
+        'pruned': pruned['removed'],
+        'released_key_generations': [old_zero['message_id'], new_hit['message_id']],
+        'old_zero_match_count': 0,
+        'new_fanout': new_hit['fanout'],
+        'legacy_status': legacy_audit['status'],
+        'audit_period_count': by_period['count'],
+    }
+
+
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             redrive=redrive, board=board, retention=retention, export=export, audit=audit,
+             forensics=audit, forensic=audit,
+             **{'receipt-audit': audit, 'publication-audit': audit})
 
 
 def main():

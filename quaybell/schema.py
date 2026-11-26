@@ -71,6 +71,41 @@ CREATE TABLE IF NOT EXISTS journal (
   kind TEXT NOT NULL,
   details TEXT NOT NULL
 );
+-- Publication forensics intentionally have no foreign key to messages and no
+-- uniqueness on (channel, producer, dedup_key).  They must survive retention
+-- and must not reserve a production key after the original message is pruned.
+CREATE TABLE IF NOT EXISTS publication_audit_receipts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  channel TEXT NOT NULL,
+  message_id INTEGER NOT NULL,
+  producer TEXT,
+  dedup_key TEXT,
+  generation INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL CHECK(status IN ('sealed','not_enabled','expired')),
+  published_at REAL NOT NULL,
+  recorded_at REAL NOT NULL,
+  audit_until REAL,
+  document TEXT NOT NULL,
+  sha256 TEXT,
+  UNIQUE(channel, message_id)
+);
+CREATE INDEX IF NOT EXISTS publication_audit_key
+  ON publication_audit_receipts(channel, producer, dedup_key, id);
+CREATE INDEX IF NOT EXISTS publication_audit_period
+  ON publication_audit_receipts(channel, published_at, id);
+CREATE TABLE IF NOT EXISTS audit_settings (
+  channel TEXT PRIMARY KEY REFERENCES channels(name),
+  enabled INTEGER NOT NULL CHECK(enabled IN (0,1)),
+  retention_seconds INTEGER NOT NULL,
+  enabled_at REAL,
+  updated_at REAL NOT NULL
+);
+CREATE VIEW IF NOT EXISTS publication_audits AS
+  SELECT * FROM publication_audit_receipts;
+CREATE VIEW IF NOT EXISTS audit_receipts AS
+  SELECT * FROM publication_audit_receipts;
+CREATE VIEW IF NOT EXISTS publication_forensics AS
+  SELECT * FROM publication_audit_receipts;
 CREATE INDEX IF NOT EXISTS delivery_lane ON deliveries(subscription_id,lane,id)
   WHERE state IN ('waiting','leased');
 CREATE INDEX IF NOT EXISTS delivery_origin ON deliveries(message_id,id);

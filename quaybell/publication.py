@@ -1,4 +1,4 @@
-from . import catalog, codec, delivery, journal, policy, routing
+from . import catalog, codec, delivery, forensics, journal, policy, routing
 from .envelope import Envelope
 from .errors import conflict, missing
 
@@ -18,7 +18,11 @@ def receipt(db, message, repeated):
 
 def publish(db, channel, raw, now):
     catalog.get(db, channel)
-    envelope = Envelope.from_input(raw)
+    audit_override = forensics.publish_override(raw, now)
+    envelope_raw = {key: value for key, value in raw.items()
+                    if key not in ('audit', 'audit_until', 'audit_period', 'ttl',
+                                   *forensics.ENABLE_FIELDS, *forensics.TTL_FIELDS)}
+    envelope = Envelope.from_input(envelope_raw)
     encoded = envelope.encoded()
     digest = codec.fingerprint(encoded)
     existing = db.execute('SELECT * FROM messages WHERE channel=? AND producer=? AND dedup_key=?',
@@ -36,5 +40,9 @@ def publish(db, channel, raw, now):
     fanout = {}
     for group in routing.matching(db, channel, envelope.tags):
         fanout[group['name']] = delivery.add(db, key, group['id'], envelope.lane, active['version'], ready_at)
+    result = dict(message_id=key, policy=active['version'], repeated=False, fanout=fanout)
+    message_row = db.execute('SELECT * FROM messages WHERE id=?', (key,)).fetchone()
+    forensics.record_publication(db, channel, dict(message_row), envelope, result, now,
+                                 audit_override)
     journal.append(db, channel, now, 'published', {'fanout': fanout, 'policy': active['version']}, key)
-    return dict(message_id=key, policy=active['version'], repeated=False, fanout=fanout)
+    return result

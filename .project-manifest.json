@@ -102,6 +102,11 @@
       "responsibility": "可下载快照及可复算摘要"
     },
     {
+      "id": "forensics",
+      "path": "quaybell/forensics.py",
+      "responsibility": "发布回执、标签和组规则的审计期封存与查询"
+    },
+    {
       "id": "codec",
       "path": "quaybell/codec.py",
       "responsibility": "规范 JSON 与摘要"

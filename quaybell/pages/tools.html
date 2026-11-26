@@ -48,4 +48,20 @@
       <output class="muted" id="retention-result" aria-live="polite"></output>
     </div>
   </details>
+  <details data-needs-channel>
+    <summary>发布回执取证</summary>
+    <form id="audit-lookup" class="compact">
+      <p class="muted">读取发布时封存的标签与组规则；清理后仍可在审计期内查询。当前预查不等于当时依据。</p>
+      <div class="pair">
+        <label>消息号<input name="message_id" inputmode="numeric" placeholder="3"></label>
+        <label>生产键<input name="key" placeholder="released-key"></label>
+      </div>
+      <div class="pair">
+        <label>审计期起点（Unix 秒，可选）<input name="start" inputmode="numeric"></label>
+        <label>审计期终点（Unix 秒，可选）<input name="end" inputmode="numeric"></label>
+      </div>
+      <button>查询取证回执</button>
+      <pre id="audit-result" class="audit-result" aria-live="polite"></pre>
+    </form>
+  </details>
 </aside>

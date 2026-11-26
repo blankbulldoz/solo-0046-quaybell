@@ -2,7 +2,7 @@ import logging
 import sqlite3
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from time import time
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from . import api_reads, api_writes, presentation, protocol, routes
 from .errors import RelayError, missing
@@ -60,7 +60,8 @@ class RelayRequest(BaseHTTPRequestHandler):
             return
 
     def resolve_route(self, method):
-        path = urlsplit(self.path).path
+        parsed = urlsplit(self.path)
+        path = parsed.path
         route = routes.match(method, path)
         if route is None:
             if method == 'GET' and not path.startswith('/v1/'):
@@ -68,10 +69,14 @@ class RelayRequest(BaseHTTPRequestHandler):
             raise missing('找不到此接口')
         action, args = route
         if method == 'GET':
+            query = parse_qs(parsed.query)
             with self.server.persistence.session() as db:
-                return api_reads.read(db, action, args, self.server.clock())
+                return api_reads.read(db, action, args, self.server.clock(), query)
         raw = protocol.receive(self)
-        with self.server.persistence.session(write=action != 'preview') as db:
+        read_only = action in ('preview', 'audit_query')
+        with self.server.persistence.session(write=not read_only) as db:
             if action == 'preview':
                 return api_reads.check_route(db, args[0], raw)
+            if action == 'audit_query':
+                return api_reads.audit_route(db, args[0], raw, self.server.clock())
             return api_writes.write(db, action, args, raw, self.server.clock())

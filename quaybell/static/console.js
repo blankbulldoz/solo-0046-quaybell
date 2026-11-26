@@ -142,7 +142,31 @@ async function trace(id) {
   $('trace-events').replaceChildren(...facts.events.map(item => node('li',
     `${clock(item.at)} · ${TEXT[item.kind === 'leased' ? 'leased_event' : item.kind]} · ${JSON.stringify(item.details)}`)));
   $('trace-export').href = `/v1/messages/${id}/evidence`;
+  const auditButton = $('trace-audit');
+  auditButton.dataset.messageId = String(id);
+  const auditResult = $('trace-audit-result');
+  auditResult.hidden = true;
+  auditResult.textContent = '';
   $('trace').showModal();
+}
+
+function renderAuditReport(target, report) {
+  const facts = [];
+  facts.push(`状态：${report.status}`);
+  if (report.evidence_status) facts.push(`证据级别：${report.evidence_status}`);
+  if (Array.isArray(report.matched_groups)) {
+    facts.push(`发布时命中：${report.matched_groups.length ? report.matched_groups.join('、') : '零匹配'}`);
+  }
+  if (report.current_topology?.current_preview_groups) {
+    facts.push(`当前预查会命中：${report.current_topology.current_preview_groups.join('、') || '无'}`);
+    if (report.current_topology.groups_created_after_publication?.length) {
+      facts.push(`发布后新建：${report.current_topology.groups_created_after_publication.join('、')}`);
+    }
+  }
+  if (report.prune_record) facts.push(`清理记录：journal #${report.prune_record.journal_id} · ${clock(report.prune_record.pruned_at)}`);
+  if (report.limitations?.length) facts.push(...report.limitations);
+  target.textContent = `${facts.join('\n')}\n\n${JSON.stringify(report, null, 2)}`;
+  target.hidden = false;
 }
 
 onForm('create-channel', async ({name}) => {
@@ -171,6 +195,28 @@ onForm('publish', async (values, mode) => {
     : `消息 #${reply.message_id} · ${reply.repeated ? '已复用原回执' : '已发布'} · ${Object.keys(reply.fanout).length} 个消费组`;
   if (mode !== 'preview') await refresh();
 });
+onForm('audit-lookup', async values => {
+  const channel = state.channel;
+  const target = $('audit-result');
+  let report;
+  if (values.message_id) {
+    report = await api(`/messages/${Number(values.message_id)}/audit`);
+  } else {
+    const body = {};
+    if (values.key) body.key = values.key;
+    if (values.start) body.start = Number(values.start);
+    if (values.end) body.end = Number(values.end);
+    report = await api(`${channelPath()}/forensics`, body);
+  }
+  if (state.channel !== channel) return;
+  renderAuditReport(target, report);
+  notice(report.count != null ? `找到 ${report.count} 条审计记录` : `取证状态：${report.status}`);
+});
+$('trace-audit').addEventListener('click', () => run(async () => {
+  const id = $('trace-audit').dataset.messageId;
+  const report = await api(`/messages/${id}/audit`);
+  renderAuditReport($('trace-audit-result'), report);
+}, $('trace-audit')));
 onForm('claim', async ({worker, limit}) => {
   if (!group()) return;
   const channel = state.channel, selected = state.group;
