@@ -1,4 +1,4 @@
-from . import catalog, codec, delivery, journal, policy, routing
+from . import catalog, codec, delivery, journal, policy, quota, routing
 from .envelope import Envelope
 from .errors import conflict, missing
 
@@ -28,13 +28,17 @@ def publish(db, channel, raw, now):
             raise conflict('同一生产键已用于另一条消息')
         return receipt(db, existing, True)
     active = policy.read(db, channel)
+    matched = routing.matching(db, channel, envelope.tags)
+    # 整笔准入先于任何写入：任一匹配组满额时由事务回滚保证不丢债务也不留残片。
+    # 重复发布复用首次回执，不受当下额度影响。
+    quota.admit(db, matched)
     ready_at = now + envelope.delay_seconds
     key = db.execute('''INSERT INTO messages(channel,producer,dedup_key,lane,envelope,fingerprint,policy,published,available)
                         VALUES (?,?,?,?,?,?,?,?,?)''',
                      (channel, envelope.producer, envelope.dedup_key, envelope.lane, encoded, digest,
                       active['version'], now, ready_at)).lastrowid
     fanout = {}
-    for group in routing.matching(db, channel, envelope.tags):
+    for group in matched:
         fanout[group['name']] = delivery.add(db, key, group['id'], envelope.lane, active['version'], ready_at)
     journal.append(db, channel, now, 'published', {'fanout': fanout, 'policy': active['version']}, key)
     return dict(message_id=key, policy=active['version'], repeated=False, fanout=fanout)

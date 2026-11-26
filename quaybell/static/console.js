@@ -60,6 +60,17 @@ function render() {
       state.group = item.name;
       render();
     })) : [node('p', '暂无消费组', 'muted')]));
+  const quotaInfo = selected?.quota;
+  if (quotaInfo) {
+    $('quota-current').textContent = quotaInfo.quota === 0 ? '不限' : String(quotaInfo.quota);
+    $('quota-open').textContent =
+      `${quotaInfo.outstanding} / ${quotaInfo.available === null ? '不限' : quotaInfo.available}`;
+    const quotaForm = $('quota');
+    if (quotaForm.dataset.stamp !== `${state.group}/${quotaInfo.quota}`) {
+      quotaForm.elements.quota.value = quotaInfo.quota;
+      quotaForm.dataset.stamp = `${state.group}/${quotaInfo.quota}`;
+    }
+  }
   $('claim').querySelector('button').disabled = !selected || selected.paused;
   $('toggle-group').disabled = !selected;
   $('toggle-group').textContent = selected?.paused ? '恢复取件' : '暂停取件';
@@ -151,9 +162,10 @@ onForm('create-channel', async ({name}) => {
   $('create-channel').reset();
   notice('频道已建立');
 });
-onForm('create-group', async ({name, tags}) => {
+onForm('create-group', async ({name, tags, quota}) => {
   const channel = state.channel;
-  await api(`${channelPath()}/groups`, {name, tags: parse(tags, '匹配标签')});
+  await api(`${channelPath()}/groups`,
+    {name, tags: parse(tags, '匹配标签'), quota: Number(quota)});
   if (state.channel === channel) state.group = name;
   $('create-group').reset();
   await refresh();
@@ -185,6 +197,14 @@ onForm('revise', async values => {
     ...Object.entries(values).map(([key, value]) => [key, Number(value)]), ['expected', expected],
   ]));
   notice(`已提交策略 v${report.version}`);
+  await refresh();
+});
+onForm('quota', async ({quota}) => {
+  if (!group()) return;
+  const report = await api(`${groupPath()}/quota`, {quota: Number(quota)});
+  $('quota-result').textContent = `已调额至 ${report.quota} · 未结 ${report.outstanding}` +
+    (report.available === null ? ' · 不限空位' : ` · 空位 ${report.available}`);
+  notice(`消费组 ${report.name} 发布额度已更新`);
   await refresh();
 });
 $('toggle-group').addEventListener('click', () => run(async () => {

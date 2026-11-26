@@ -29,6 +29,19 @@
     <div class="leases" id="leases"></div>
   </details>
   <details data-needs-channel>
+    <summary>发布额度</summary>
+    <form id="quota" class="compact">
+      <p class="muted">0 表示不限；正整数为该组未结（待领/租约中）分发上限。下调不驱逐既有积压，只在空位恢复前拦截新发布。</p>
+      <div class="pair">
+        <label>当前额度<output id="quota-current">—</output></label>
+        <label>未结 / 空位<output id="quota-open">—</output></label>
+      </div>
+      <label>新额度<input name="quota" type="number" min="0" max="1000000" value="0" required></label>
+      <button>在线调额</button>
+      <output class="muted" id="quota-result" aria-live="polite"></output>
+    </form>
+  </details>
+  <details data-needs-channel>
     <summary>修订策略</summary>
     <form id="revise" class="compact">
       <div class="pair">

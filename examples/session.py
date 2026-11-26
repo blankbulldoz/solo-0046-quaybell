@@ -39,14 +39,22 @@ class Session:
     def channel(self, policy=None):
         return self.request('/channels', {'name': 'wire-gate', 'policy': policy or POLICY}, 201)
 
-    def subscribe(self, name='oscillator', tags=None):
-        return self.request(CHANNEL + '/groups', {'name': name, 'tags': tags or {}}, 201)
+    def subscribe(self, name='oscillator', tags=None, quota=0):
+        data = {'name': name, 'tags': tags or {}}
+        if quota:
+            data['quota'] = quota
+        return self.request(CHANNEL + '/groups', data, 201)
+
+    def set_quota(self, group, value, expected=200):
+        path = CHANNEL + f'/groups/{group}/quota'
+        return self.request(path, {'quota': value}, expected)
 
     def publish(self, key='signal-1', lane='coil-north', expected=201, **extra):
         return self.request(CHANNEL + '/messages', envelope(key, lane, **extra), expected)
 
-    def claim(self, limit=1, worker='bench-worker'):
-        return self.request(GROUP + '/claim', {'worker': worker, 'limit': limit})['items']
+    def claim(self, limit=1, worker='bench-worker', group='oscillator'):
+        path = CHANNEL + f'/groups/{group}/claim'
+        return self.request(path, {'worker': worker, 'limit': limit})['items']
 
     def settle(self, item, mode='ack', expected=200):
         data = {'token': item['lease']['token']}

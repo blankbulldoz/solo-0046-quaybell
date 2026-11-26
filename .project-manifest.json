@@ -17,6 +17,11 @@
       "responsibility": "标签订阅和取件开关"
     },
     {
+      "id": "quota",
+      "path": "quaybell/quota.py",
+      "responsibility": "消费组发布额度、在线调额与整笔准入"
+    },
+    {
       "id": "routing",
       "path": "quaybell/routing.py",
       "responsibility": "预查和发布共用的精确匹配"
@@ -270,6 +275,26 @@
         "expiry",
         "policy",
         "attempts"
+      ]
+    },
+    {
+      "id": "quota",
+      "name": "在线发布额度与整笔准入",
+      "entry": "POST /v1/channels/{channel}/groups/{group}/quota",
+      "success": "在线调额后按未结空位放行，ACK 归还、重启一致",
+      "failure": "任一匹配组无空位即整笔 409 并指出卡住的组，下调不绕过该组",
+      "verification": "python3 -m examples.walkthrough quota",
+      "steps": [
+        "通过 POST /v1/channels/{channel}/groups/{group}/quota 在线上调或下调额度",
+        "发布在同一写事务内对全部匹配组整笔准入，任一满额即回滚并返回 blocked",
+        "既有投递正常消费归还额度，重启后额度与未结分发保持一致"
+      ],
+      "module_ids": [
+        "quota",
+        "publication",
+        "subscriptions",
+        "journal",
+        "persistence"
       ]
     },
     {

@@ -1,7 +1,13 @@
 class RelayError(Exception):
-    def __init__(self, status, code, message):
+    def __init__(self, status, code, message, details=None):
         super().__init__(message)
-        self.status, self.code = status, code
+        self.status, self.code, self.details = status, code, details
+
+    def body(self):
+        data = {'error': self.code, 'message': str(self)}
+        if self.details:
+            data.update(self.details)
+        return data
 
 
 def invalid(message):
@@ -12,5 +18,5 @@ def missing(message):
     return RelayError(404, 'not_found', message)
 
 
-def conflict(message):
-    return RelayError(409, 'conflict', message)
+def conflict(message, details=None):
+    return RelayError(409, 'conflict', message, details)

@@ -23,8 +23,9 @@ python3 -m quaybell --demo
 | `/channels` | GET / POST | 枚举频道或用 `name`、可选 `policy` 建立频道 |
 | `/channels/{channel}` | GET | 当前策略、分组计数、队列样本、近期消息与死信 |
 | `/channels/{channel}/policy` | POST | 全部四个策略值和预期版号 `expected` |
-| `/channels/{channel}/groups` | POST | `name`、可选匹配 `tags` |
+| `/channels/{channel}/groups` | POST | `name`、可选匹配 `tags`、可选 `quota`（发布额度，0=不限） |
 | `/channels/{channel}/groups/{group}/pause` | POST | `paused` 为布尔值 |
+| `/channels/{channel}/groups/{group}/quota` | POST | 在线调额 `quota`（0～1000000，0=不限），返回额度、未结与空位 |
 | `/channels/{channel}/preview` | POST | 用发布信封查询当前标签匹配结果 |
 | `/channels/{channel}/messages` | POST | `producer`、`key`、`lane`、`payload`、可选 `tags`、`delay_seconds` |
 | `/channels/{channel}/groups/{group}/claim` | POST | `worker`、可选 `limit`，返回含 `lease.token` 的领取项 |
@@ -39,6 +40,15 @@ python3 -m quaybell --demo
 
 默认策略是 `lease_seconds=24`、`retry_seconds=3`、`max_attempts=3`、`retention_seconds=3600`。重发原生产键时复用初始匹配结果，内容变化则返回 409。如果应用侧副作用必须去重，应按消息和消费组身份设计处理键。重投需要按其业务语义明确将后继身份识别为有意重新处理。
 
+### 发布额度
+
+每个消费组可单独设置发布额度 `quota`，约束该组处于未结状态（`waiting`/`leased`）的分发数量；`0` 表示不限，也是所有既有消费组的默认值。ACK 或进入死信立即归还空位，NACK 与租约超时回到待领仍占用额度。
+
+- 发布在写事务内先做整笔准入：消息匹配的任一消费组没有空位，整笔拒绝（409 `quota_exhausted`），不写入消息或任何分发，回执的 `blocked` 列出每个卡住的组及其 `quota`、`outstanding`、`available`。
+- 额度可在线上调或下调，立即生效且随存储持久化。下调到当前积压以下不会驱逐或绕过该组：既有投递继续正常消费并归还额度，恢复空位前新发布持续被拒。
+- 重复发布复用首次回执，不再次占额度；运维重投（redrive）是对既有死信的处置，不经过发布准入。
+- 准入按组走未结分发的部分索引探测，计数与历史消息总量无关，平稳流量下发布耗时不随积压增长。频道看板的每个组返回 `quota`、`outstanding`、`available`（不限时 `available` 为 `null`）。
+
 以下载荷可发布到示例频道。默认延迟为零。
 
 ```json
@@ -50,6 +60,7 @@ python3 -m quaybell --demo
 ```sh
 python3 -m compileall -q quaybell examples
 python3 -m examples.walkthrough claim
+python3 -m examples.walkthrough quota
 python3 -m examples.walkthrough retention
 python3 -m examples.walkthrough export
 ```

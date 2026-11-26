@@ -1,4 +1,4 @@
-VERSION = 1
+VERSION = 2
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS channels (
   name TEXT PRIMARY KEY,
@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   tags TEXT NOT NULL,
   paused INTEGER NOT NULL DEFAULT 0 CHECK(paused IN (0,1)),
   created REAL NOT NULL,
+  publish_quota INTEGER NOT NULL DEFAULT 0,
   UNIQUE(channel, name)
 );
 CREATE TABLE IF NOT EXISTS messages (
@@ -78,4 +79,6 @@ CREATE INDEX IF NOT EXISTS attempt_deadline ON attempts(expires,id) WHERE outcom
 CREATE UNIQUE INDEX IF NOT EXISTS one_open_attempt ON attempts(delivery_id) WHERE outcome='open';
 CREATE INDEX IF NOT EXISTS message_channel ON messages(channel,published,id);
 CREATE INDEX IF NOT EXISTS journal_message ON journal(message_id,id);
+CREATE INDEX IF NOT EXISTS delivery_outstanding ON deliveries(subscription_id)
+  WHERE state IN ('waiting','leased');
 '''

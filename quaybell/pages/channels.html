@@ -18,6 +18,7 @@
       <form id="create-group" class="compact">
         <label>组名<input name="name" required maxlength="48" pattern="[a-z][a-z0-9-]*" placeholder="drift-keeper"></label>
         <label>匹配标签<textarea name="tags" rows="2" placeholder='{"feed":"telemetry"}'>{}</textarea></label>
+        <label>发布额度（0=不限）<input name="quota" type="number" min="0" max="1000000" value="0"></label>
         <button>添加</button>
       </form>
     </details>

@@ -1,4 +1,4 @@
-from . import catalog, inputs, journal
+from . import catalog, inputs, journal, quota
 from .codec import pack, unpack
 from .envelope import labels
 from .errors import conflict, missing
@@ -22,14 +22,15 @@ def get(db, channel, group):
 
 def create(db, channel, raw, now):
     catalog.get(db, channel)
-    inputs.require(raw, ('name',), ('tags',))
+    inputs.require(raw, ('name',), ('tags', 'quota'))
     group = inputs.name(raw['name'], '消费组')
     tags = labels(raw.get('tags', {}))
+    limit = quota.quota_value(raw)
     if any(item['name'] == group for item in for_channel(db, channel)):
         raise conflict('消费组已存在')
-    db.execute('INSERT INTO subscriptions(channel,name,tags,created) VALUES (?,?,?,?)',
-               (channel, group, pack(tags), now))
-    journal.append(db, channel, now, 'subscribed', {'group': group, 'tags': tags})
+    db.execute('INSERT INTO subscriptions(channel,name,tags,created,publish_quota) VALUES (?,?,?,?,?)',
+               (channel, group, pack(tags), now, limit))
+    journal.append(db, channel, now, 'subscribed', {'group': group, 'tags': tags, 'quota': limit})
     return get(db, channel, group)
 
 
