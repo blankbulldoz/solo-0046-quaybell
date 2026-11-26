@@ -30,7 +30,7 @@ python3 -m quaybell --demo
 | `/channels/{channel}/groups/{group}/claim` | POST | `worker`、可选 `limit`，返回含 `lease.token` 的领取项 |
 | `/deliveries/{id}/ack` | POST | `token` |
 | `/deliveries/{id}/nack` | POST | `token` 和 `reason` |
-| `/sweep` | POST | `{}` 或 `limit`，按原截止时间回收全局租约 |
+| `/sweep` | GET / POST | GET 观测回收上界、剩余与新到期；POST `{}` 或 `limit`，可带 `upper_bound`、`request_key`，按原截止时间逐段回收 |
 | `/channels/{channel}/dead` | GET | 最近 50 个失败投递及最后一次尝试 |
 | `/deliveries/{id}/redrive` | POST | `{}`，使用当前策略追加一个后继投递 |
 | `/messages/{id}` | GET | 信封、分发、尝试、消息级处理记录 |
@@ -38,6 +38,8 @@ python3 -m quaybell --demo
 | `/channels/{channel}/retention` | GET / POST | 候选复核，或以 `{}` / `limit` 清理实际合格项 |
 
 默认策略是 `lease_seconds=24`、`retry_seconds=3`、`max_attempts=3`、`retention_seconds=3600`。重发原生产键时复用初始匹配结果，内容变化则返回 409。如果应用侧副作用必须去重，应按消息和消费组身份设计处理键。重投需要按其业务语义明确将后继身份识别为有意重新处理。
+
+维护窗口后的批量回收可逐段追赶：`GET /v1/sweep` 在同一观测时间给出 `upper_bound`（当下已到期开放尝试中的最大原截止时间）、`remaining`（该上界内尚未回收的数量）和 `newly_expired`（截止晚于观测上界、但在当前观测前新到期的数量）。`POST /v1/sweep` 带同一 `upper_bound` 和 `limit` 即可一段段推进，响应中的 `segment_range` 是本段推进的截止范围，`advanced` 累计已覆盖范围（含正常领取时自动触发的组内回收），`caught_up` 表示上界内是否清空。为同一请求携带相同 `request_key`（或 `Idempotency-Key` 请求头）重试时，直接返回首次回执并标记 `repeated: true`；同一标识换参数会返回 409。下一次可领时间始终按“原租约截止 + 尝试代际对应的指数退避”计算，与实际回收时刻无关，所以维护延迟不会整体推后就绪点——延迟超过退避时，回收或下一次领取会立刻重新发放租约。
 
 以下载荷可发布到示例频道。默认延迟为零。
 
@@ -50,6 +52,8 @@ python3 -m quaybell --demo
 ```sh
 python3 -m compileall -q quaybell examples
 python3 -m examples.walkthrough claim
+python3 -m examples.walkthrough sweep
+python3 -m examples.walkthrough catchup
 python3 -m examples.walkthrough retention
 python3 -m examples.walkthrough export
 ```

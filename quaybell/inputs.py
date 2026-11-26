@@ -30,6 +30,13 @@ def boolean(value, label):
     return value
 
 
+def moment(value, label):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) \
+            or not 0 <= value <= 4_102_444_800:
+        raise invalid(f'{label}须为 0～4102444800 的 Unix 秒')
+    return float(value)
+
+
 def require(data, keys, optional=()):
     if not set(keys) <= data.keys() or data.keys() - set(keys) - set(optional):
         raise invalid('请求字段缺失或包含未识别字段')

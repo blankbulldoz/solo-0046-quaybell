@@ -1,6 +1,7 @@
 import {$, TEXT, api, button, clock, node, notice, onForm, parse, rows, run, status} from './relay.js';
 
-const state = {channel: null, group: null, board: null, sequence: 0, retention: null, leases: new Map()};
+const state = {channel: null, group: null, board: null, sequence: 0, retention: null, leases: new Map(),
+  sweep: null, sweepBound: null};
 const policyFields = ['lease_seconds', 'retry_seconds', 'max_attempts', 'retention_seconds'];
 const group = () => state.board?.groups.find(item => item.name === state.group);
 const channelPath = () => `/channels/${state.channel}`;
@@ -46,6 +47,41 @@ async function refresh() {
   $('channels').replaceChildren(...(topology.length ? topology.map(({name}) =>
     selectButton(name, name === state.channel, () => choose(name))) : [node('p', '暂无频道', 'muted')]));
   render();
+  if (board) await refreshSweep(current);
+}
+
+function sweepRangeText(range) {
+  return range ? `${clock(range.from_expires)} ～ ${clock(range.to_expires)}` : '无';
+}
+
+async function refreshSweep(current) {
+  try {
+    const query = state.sweepBound == null ? '' : `?upper_bound=${encodeURIComponent(state.sweepBound)}`;
+    const sweep = await api(`/sweep${query}`);
+    if (current !== state.sequence) return;
+    state.sweep = sweep;
+    renderSweepStatus();
+  } catch {
+    // 回收观测只是辅助信息，失败时不打断频道面板。
+  }
+}
+
+function renderSweepStatus() {
+  const target = $('sweep-status');
+  if (!target || !state.sweep) return;
+  const obs = state.sweep;
+  if (obs.upper_bound == null) {
+    target.textContent = `观测于 ${clock(obs.observed_at)}：没有已到期未回收的租约。`;
+  } else {
+    target.textContent = `观测于 ${clock(obs.observed_at)} · 观测上界 ${clock(obs.upper_bound)}`
+      + ` · 上界内剩余 ${obs.remaining} · 上界外新到期 ${obs.newly_expired} · 未到期 ${obs.pending}`;
+  }
+  if (obs.advanced_range) {
+    target.textContent += ` · 已推进 ${obs.advanced.count} 个，截止范围 ${sweepRangeText(obs.advanced_range)}`;
+  }
+  const newer = state.sweepBound != null && obs.current_upper_bound != null
+    && obs.current_upper_bound > state.sweepBound && obs.caught_up;
+  $('recover-new').hidden = !newer;
 }
 
 function render() {
@@ -192,11 +228,50 @@ $('toggle-group').addEventListener('click', () => run(async () => {
   await api(`${groupPath()}/pause`, {paused: !group().paused});
   await refresh();
 }));
+function renderSweepReport(report) {
+  const lines = [`本段回收 ${report.segment_count} 个，推进截止范围 ${sweepRangeText(report.segment_range)}。`];
+  lines.push(`观测上界 ${clock(report.upper_bound)}：上界内剩余 ${report.remaining}，上界外新到期 ${report.newly_expired}。`);
+  if (report.advanced_range) {
+    lines.push(`累计已推进 ${report.advanced.count} 个，已覆盖截止范围 ${sweepRangeText(report.advanced_range)}（含领取时自动回收）。`);
+  }
+  if (report.repeated) lines.push('这是原回收请求的重试：返回首次执行回执（repeated），没有再次回收。');
+  if (report.caught_up) {
+    lines.push(report.newly_expired > 0
+      ? `旧上界内已清空；另有 ${report.newly_expired} 个新到期租约，新观测上界为 ${clock(report.current_upper_bound)}，可转向新上界继续追赶。`
+      : '观测上界内已全部追赶完成。');
+  }
+  $('sweep-report').textContent = lines.join('\n');
+}
+
 $('recover').addEventListener('click', () => run(async () => {
-  const report = await api('/sweep', {limit: 100});
-  notice(`已回收 ${report.recovered.length} 个过期租约`);
+  if (state.sweepBound == null) {
+    const observation = await api('/sweep');
+    state.sweepBound = observation.upper_bound;
+  }
+  const body = {limit: 20};
+  if (state.sweepBound != null) body.upper_bound = state.sweepBound;
+  const report = await api('/sweep', body);
+  renderSweepReport(report);
+  notice(report.repeated ? '重复请求已返回首次回收回执'
+    : `本段回收 ${report.segment_count} 个，上界内剩余 ${report.remaining}`);
   await refresh();
 }, $('recover')));
+$('recover-observe').addEventListener('click', () => run(async () => {
+  const observation = await api('/sweep');
+  state.sweepBound = observation.upper_bound;
+  state.sweep = observation;
+  renderSweepStatus();
+  $('sweep-report').textContent = observation.upper_bound == null
+    ? '当前没有到期租约，暂不需要建立追赶上界。'
+    : `已重新观测：上界 ${clock(observation.upper_bound)}，上界内剩余 ${observation.remaining}，上界外新到期 ${observation.newly_expired}。`;
+  notice('已重新观测回收上界');
+}, $('recover-observe')));
+$('recover-new').addEventListener('click', () => run(async () => {
+  const observation = await api('/sweep');
+  state.sweepBound = observation.current_upper_bound;
+  notice(`已转向新到期上界 ${clock(state.sweepBound)}`);
+  await refresh();
+}, $('recover-new')));
 $('refresh').addEventListener('click', () => run(refresh, $('refresh')));
 $('retention-plan').addEventListener('click', () => run(async () => {
   const channel = state.channel;

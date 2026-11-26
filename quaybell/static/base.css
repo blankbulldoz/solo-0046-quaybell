@@ -82,6 +82,12 @@ h3 { font-size: .93rem; margin: 16px 0 7px; }
 .workspace { min-width: 0; }
 .workspace-head, .section-head, .dialog-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .workspace-head { margin-bottom: 17px; }
+.sweep-bar { margin-bottom: 16px; padding: 11px 12px; display: grid; gap: 7px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.sweep-bar p { margin: 0; }
+.sweep-report { display: block; white-space: pre-line; font-size: .86rem; line-height: 1.55;
+  padding: 8px 10px; border-radius: 6px; background: #f3f6f1; border: 1px solid var(--line); }
+.sweep-report:empty { display: none; }
 .eyebrow { color: var(--muted); font-size: .84rem; margin-bottom: 5px; }
 .stats { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 6px; margin-bottom: 16px; }
 .stat { min-width: 0; padding: 9px 7px; background: var(--surface); border: 1px solid var(--line); border-radius: 7px; }

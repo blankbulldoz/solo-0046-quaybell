@@ -78,4 +78,10 @@ CREATE INDEX IF NOT EXISTS attempt_deadline ON attempts(expires,id) WHERE outcom
 CREATE UNIQUE INDEX IF NOT EXISTS one_open_attempt ON attempts(delivery_id) WHERE outcome='open';
 CREATE INDEX IF NOT EXISTS message_channel ON messages(channel,published,id);
 CREATE INDEX IF NOT EXISTS journal_message ON journal(message_id,id);
+CREATE TABLE IF NOT EXISTS sweep_receipts (
+  request_key TEXT PRIMARY KEY,
+  request_digest TEXT NOT NULL,
+  response TEXT NOT NULL,
+  created REAL NOT NULL
+);
 '''

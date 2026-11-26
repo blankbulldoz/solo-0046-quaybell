@@ -55,6 +55,10 @@
       "command": "python3 -m examples.walkthrough sweep"
     },
     {
+      "workflow_id": "catchup",
+      "command": "python3 -m examples.walkthrough catchup"
+    },
+    {
       "workflow_id": "dead",
       "command": "python3 -m examples.walkthrough dead"
     },

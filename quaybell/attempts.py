@@ -23,10 +23,13 @@ def by_token(db, delivery_id, token):
     return dict(row)
 
 
-def expired(db, now, limit, subscription_id=None):
+def expired(db, now, limit, subscription_id=None, upper_bound=None):
     query = """SELECT a.* FROM attempts a JOIN deliveries d ON d.id=a.delivery_id
                WHERE a.outcome='open' AND a.expires<=?"""
     values = [now]
+    if upper_bound is not None:
+        query += ' AND a.expires<=?'
+        values.append(upper_bound)
     if subscription_id is not None:
         query += ' AND d.subscription_id=?'
         values.append(subscription_id)

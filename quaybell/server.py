@@ -2,7 +2,7 @@ import logging
 import sqlite3
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from time import time
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from . import api_reads, api_writes, presentation, protocol, routes
 from .errors import RelayError, missing
@@ -68,9 +68,14 @@ class RelayRequest(BaseHTTPRequestHandler):
             raise missing('找不到此接口')
         action, args = route
         if method == 'GET':
+            query = {key: values[-1] for key, values in parse_qs(urlsplit(self.path).query).items()}
             with self.server.persistence.session() as db:
-                return api_reads.read(db, action, args, self.server.clock())
+                return api_reads.read(db, action, args, self.server.clock(), query)
         raw = protocol.receive(self)
+        if action == 'sweep':
+            header_key = self.headers.get('Idempotency-Key')
+            if header_key:
+                raw.setdefault('idempotency_key', header_key)
         with self.server.persistence.session(write=action != 'preview') as db:
             if action == 'preview':
                 return api_reads.check_route(db, args[0], raw)

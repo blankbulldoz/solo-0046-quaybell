@@ -1,10 +1,12 @@
-from . import catalog, deadletters, evidence, inspection, overview, retention, routing
+from . import catalog, deadletters, evidence, expiry, inspection, overview, retention, routing
 from .protocol import Reply
 
 
-def read(db, action, args, now):
+def read(db, action, args, now, query=None):
     if action == 'channels':
         return Reply({'channels': catalog.list_all(db)})
+    if action == 'sweep_observe':
+        return Reply(expiry.observe(db, now, query))
     if action == 'board':
         return Reply(overview.board(db, args[0], now))
     if action == 'dead':

@@ -7,8 +7,8 @@ def claim(db, channel, group, raw, now):
     limit = inputs.integer(raw.get('limit', 1), 1, 30, '领取上限')
     sub = subscriptions.get(db, channel, group)
     if sub['paused']:
-        return {'paused': True, 'items': []}
-    expiry.reap(db, now, 100, sub['id'])
+        return {'paused': True, 'recovered': [], 'items': []}
+    recovered = [result for _, result in expiry.reap_segment(db, now, 100, sub['id'])]
     results = []
     for item in eligibility.ready(db, sub['id'], now, limit):
         rule = policy.read(db, channel, item['policy'])
@@ -19,4 +19,4 @@ def claim(db, channel, group, raw, now):
                                                    'worker': worker, 'expires': lease['expires']}, message['id'])
         results.append(dict(delivery_id=item['id'], message_id=message['id'], lane=item['lane'],
                             policy=item['policy'], lease=lease, envelope=message['envelope']))
-    return {'paused': False, 'items': results}
+    return {'paused': False, 'recovered': recovered, 'items': results}

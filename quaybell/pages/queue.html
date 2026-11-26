@@ -1,8 +1,16 @@
 <section class="workspace" aria-labelledby="channel-title">
   <header class="workspace-head">
     <div><p class="eyebrow">中继 / 频道</p><h1 id="channel-title">选择频道</h1><span class="muted" id="policy-version"></span></div>
-    <button type="button" class="quiet" id="recover" data-needs-channel>回收过期租约</button>
   </header>
+  <section class="sweep-bar" aria-label="租约回收进度" data-needs-channel hidden>
+    <div class="button-row">
+      <button type="button" class="quiet" id="recover">按上界推进一段（20 条）</button>
+      <button type="button" class="quiet" id="recover-observe">重新观测上界</button>
+      <button type="button" class="quiet" id="recover-new" hidden>转向新到期上界</button>
+    </div>
+    <p class="muted" id="sweep-status">尚未观测回收面。</p>
+    <output class="sweep-report" id="sweep-report" aria-live="polite"></output>
+  </section>
   <div class="stats" id="stats" aria-label="投递分类计数"></div>
   <section class="table-section">
     <div class="section-head"><h2>消费组队列</h2><span class="muted" id="queue-group"></span></div>

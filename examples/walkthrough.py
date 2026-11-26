@@ -129,6 +129,7 @@ def retry(client):
 
 
 def sweep(client):
+    # 原有合同：恰好到期的旧凭据确认返回 409，回收按原截止时间 + 退避重算。
     client.channel()
     client.subscribe()
     client.publish()
@@ -136,10 +137,111 @@ def sweep(client):
     client.tick(4)
     client.settle(item, expected=409)
     client.tick(3)
-    result = client.request('/sweep', {'limit': 1})
+    original_request = {'limit': 1}
+    result = client.request('/sweep', original_request)
     assert result['recovered'][0]['effective_at'] == item['lease']['expires'] + 3
-    assert client.claim()[0]['lease']['number'] == 2
-    return result
+    second = client.claim()[0]
+    assert second['lease']['number'] == 2
+    client.settle(second)
+    # 原回收请求在处置完成后重试是安全的：不会重复关闭，也没有新的到期尝试。
+    settled_retry = client.request('/sweep', original_request)
+    assert settled_retry['recovered'] == [] and settled_retry['remaining'] == 0
+
+    # 维护窗口场景：提高后续投递的尝试预算，便于演示第二代退避同样锚定原截止。
+    client.request(CHANNEL + '/policy', POLICY | {'expected': 1, 'max_attempts': 5}, 201)
+
+    # 几十条租约：每条使用独立顺序键，两次领取（单次上限 30）在同一受控时钟下发租，
+    # 因而共享完全相同的截止时间。
+    total = 40
+    for index in range(total):
+        client.publish(f'batch-{index:02d}', f'bay-{index:02d}')
+    batch = client.claim(30) + client.claim(30)
+    assert len(batch) == total
+    deadlines = {taken['lease']['expires'] for taken in batch}
+    assert len(deadlines) == 1
+    deadline = deadlines.pop()
+
+    # 维护窗口过去两个小时：所有租约早就到期，但回收一直没有运行。
+    maintenance_delay = 7200
+    client.tick(maintenance_delay)
+    reap_now = client.clock[0]
+
+    # 观测上界 = 当下到期开放尝试中的最大原截止；此刻 40 条全部落在同一上界内。
+    observed = client.request('/sweep')
+    assert observed['upper_bound'] == deadline
+    assert (observed['remaining'], observed['newly_expired']) == (total, 0)
+
+    # 第一段（带幂等标识）：只推进 10 条，响应给出本轮截止范围和上界内剩余。
+    first_request = {'limit': 10, 'upper_bound': deadline, 'request_key': 'maintenance-window-segment-a'}
+    first = client.request('/sweep', first_request)
+    first_ids = [row['delivery_id'] for row in first['recovered']]
+    assert len(first_ids) == 10
+    assert first['segment_range']['from_expires'] == deadline == first['segment_range']['to_expires']
+    assert first['remaining'] == total - 10 and first['caught_up'] is False
+
+    # 重试“原回收请求”：命中持久回执，逐字段返回首次结果并标记 repeated，不会再回收下一批。
+    retried = client.request('/sweep', first_request)
+    assert retried == first | {'repeated': True}
+    assert [row['delivery_id'] for row in retried['recovered']] == first_ids
+
+    # 再推进一段（不带标识，重复同形请求会继续追赶而不是重放）。
+    second_segment = client.request('/sweep', {'limit': 10, 'upper_bound': deadline})
+    assert len(second_segment['recovered']) == 10
+    assert second_segment['remaining'] == total - 20
+
+    # 分段之间一次正常领取会先做组内有界回收：剩余 20 条在这里被领取路径回收，
+    # 随后立即重领出第 2 次尝试——下一次可领时间是 deadline+3，远早于当前时钟，
+    # 所以两个小时的维护延迟没有整体推后就绪时刻。
+    claim_reply = client.request(GROUP + '/claim', {'worker': 'catchup-worker', 'limit': 30})
+    claim_recovered = claim_reply['recovered']
+    assert len(claim_recovered) == total - 20
+    assert {row['effective_at'] for row in claim_recovered} == {deadline + 3}
+    assert all(row['effective_at'] < reap_now for row in claim_recovered)
+    assert len(claim_reply['items']) == 30
+    assert {taken['lease']['number'] for taken in claim_reply['items']} == {2}
+    next_deadline = reap_now + 4
+    assert {taken['lease']['expires'] for taken in claim_reply['items']} == {next_deadline}
+
+    # 再按旧上界回收一段：回收数为 0，但进度显示上界内已清空、累计推进覆盖全部 40 条。
+    caught = client.request('/sweep', {'limit': 10, 'upper_bound': deadline})
+    assert caught['recovered'] == [] and caught['remaining'] == 0 and caught['caught_up'] is True
+    assert caught['advanced']['count'] == total + 1
+    assert caught['advanced']['from_expires'] == item['lease']['expires']
+    assert caught['advanced']['to_expires'] == deadline
+
+    # 新领出的 30 个租约 5 秒后到期：它们的截止晚于旧观测上界，属于“新到期”，
+    # 而不是旧上界内的“剩余”。
+    client.tick(5)
+    watch = client.request('/sweep', {'limit': 1, 'upper_bound': deadline})
+    assert watch['remaining'] == 0
+    assert watch['newly_expired'] == 30
+    assert watch['current_upper_bound'] == next_deadline
+
+    # 按新上界回收第二代：退避按“原截止 next_deadline”翻倍为 6 秒，与维护延迟无关。
+    wave = client.request('/sweep', {'limit': 100, 'upper_bound': next_deadline})
+    assert len(wave['recovered']) == 30
+    assert {row['effective_at'] for row in wave['recovered']} == {next_deadline + 6}
+
+    # 恰好走到 next_deadline+6 即可再次领取第 3 次尝试，证明就绪时间没有被回收时刻推后。
+    client.tick(5)
+    third = client.claim(30)
+    assert len(third) == 30 and {taken['lease']['number'] for taken in third} == {3}
+
+    return {
+        'lease_deadline': deadline,
+        'maintenance_delay_seconds': maintenance_delay,
+        'observed_upper_bound': observed['upper_bound'],
+        'segment_size': 10,
+        'first_segment_ids': first_ids,
+        'original_request_repeated': retried['repeated'],
+        'claim_triggered_recovered': len(claim_recovered),
+        'remaining_before_claim': total - 20,
+        'remaining_after_claim': caught['remaining'],
+        'newly_expired_beyond_bound': watch['newly_expired'],
+        'next_ready_at': next_deadline + 6,
+        'third_attempts_claimed': len(third),
+        'legacy': result,
+    }
 
 
 def dead(client):
@@ -208,7 +310,8 @@ def export(client):
 
 
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
-             inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
+             inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep,
+             catchup=sweep, dead=dead,
              redrive=redrive, board=board, retention=retention, export=export)
 
 
