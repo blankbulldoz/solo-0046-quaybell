@@ -207,9 +207,60 @@ def export(client):
     return {'format': record['format'], 'sha256': digest}
 
 
+def shadow(client):
+    """Observe a candidate rule set against live traffic, then export the split."""
+    client.channel()
+    client.subscribe(tags={'feed': 'samples'})
+    client.subscribe('witness', tags={'feed': 'notices'})
+    started = client.shadow_start('narrow', {'feed': 'samples', 'mode': 'rapid'})
+    assert started['state'] == 'observing' and started['candidate']['registered'] is False
+    assert started['deliveries_created'] == 0
+    # Matching anyway, so a dropped match would be a real loss.
+    client.publish('s-keep', tags={'feed': 'samples', 'mode': 'rapid'})
+    # Plain samples: baseline takes it, the narrowed candidate would not.
+    client.publish('s-lost', tags={'feed': 'samples'})
+    # Replay the first production key under observation: no new copy anywhere.
+    replay = client.publish('s-keep', expected=200, observed=True,
+                            tags={'feed': 'samples', 'mode': 'rapid'})
+    assert replay['repeated'] is True
+    # Switch the candidate while traffic continues.
+    client.shadow_switch('wide', {'feed': 'samples'})
+    client.publish('s-wide', tags={'feed': 'samples', 'mode': 'steady'})
+    # Revise the real subscription mid-run; the baseline follows the live version.
+    client.revise_rules(tags={'feed': 'alerts'})
+    # Baseline (alerts) and the wide candidate disagree in both directions.
+    client.publish('s-added', tags={'feed': 'alerts'})
+    client.publish('s-cand', tags={'feed': 'samples'})
+    live = client.shadow()['observation']
+    assert live['candidate_history'][0]['tags'] == {'feed': 'samples', 'mode': 'rapid'}
+    stopped = client.shadow_stop()
+    comparison = stopped['comparison']
+    assert comparison['denominator'] == {'attempts': 6, 'distinct_messages': 5,
+                                         'replayed_attempts': 1, 'baseline_matched': 5,
+                                         'candidate_matched': 4, 'differing': 3,
+                                         'delivered_to_real_group': 5}
+    assert [item['dedup_key'] for item in comparison['added_matches']] == ['s-cand']
+    assert [item['dedup_key'] for item in comparison['realized_lost_matches']] == ['s-lost', 's-added']
+    assert comparison['replay_lost_matches'] == []
+    segments = comparison['segments']
+    assert [(item['baseline_rule'], item['candidate_rule']) for item in segments] == [(1, 1), (1, 2), (2, 2)]
+    assert segments[0]['candidate_tags'] == {'feed': 'samples', 'mode': 'rapid'}
+    # The consumer received one copy per real message, never an extra one.
+    assert client.shadow()['observation'] is None
+    client.shadow_start('again', {'feed': 'samples'})
+    record = client.shadow_evidence()
+    digest = record.pop('sha256')
+    assert fingerprint(pack(record)) == digest and record['format'] == 'quaybell-shadow/1'
+    observations = record['observations']
+    assert len(observations) == 2 and observations[0]['comparison']['denominator'] == comparison['denominator']
+    return {'denominator': comparison['denominator'],
+            'added': [item['dedup_key'] for item in comparison['added_matches']],
+            'realized_lost': [item['dedup_key'] for item in comparison['realized_lost_matches']]}
+
+
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             redrive=redrive, board=board, retention=retention, export=export, shadow=shadow)
 
 
 def main():

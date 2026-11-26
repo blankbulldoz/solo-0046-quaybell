@@ -1,6 +1,6 @@
 import {$, TEXT, api, button, clock, node, notice, onForm, parse, rows, run, status} from './relay.js';
 
-const state = {channel: null, group: null, board: null, sequence: 0, retention: null, leases: new Map()};
+const state = {channel: null, group: null, board: null, sequence: 0, retention: null, leases: new Map(), shadow: null};
 const policyFields = ['lease_seconds', 'retry_seconds', 'max_attempts', 'retention_seconds'];
 const group = () => state.board?.groups.find(item => item.name === state.group);
 const channelPath = () => `/channels/${state.channel}`;
@@ -29,6 +29,7 @@ async function choose(channel) {
     state.group = null;
     state.board = null;
     $('publication-result').textContent = '';
+    state.shadow = null;
     resetRetention();
   }
   await refresh();
@@ -43,6 +44,8 @@ async function refresh() {
   if (current !== state.sequence) return;
   state.board = board;
   if (!group()) state.group = board?.groups[0]?.name ?? null;
+  state.shadow = state.channel && state.group ? await shadowStatus() : null;
+  if (current !== state.sequence) return;
   $('channels').replaceChildren(...(topology.length ? topology.map(({name}) =>
     selectButton(name, name === state.channel, () => choose(name))) : [node('p', '暂无频道', 'muted')]));
   render();
@@ -55,10 +58,11 @@ function render() {
   $('observed').textContent = board ? `观测于 ${clock(board.observed_at)}` : '';
   $('policy-version').textContent = board ? `当前策略 v${board.policy.version}` : '';
   for (const item of document.querySelectorAll('[data-needs-channel]')) item.hidden = !board;
+  for (const item of document.querySelectorAll('[data-needs-group]')) item.hidden = !board || !selected;
   $('groups').replaceChildren(...(board?.groups.length ? board.groups.map(item =>
-    selectButton(item.paused ? `${item.name} · 暂停` : item.name, item.name === state.group, () => {
+    selectButton(item.paused ? `${item.name} · 暂停` : item.name, item.name === state.group, async () => {
       state.group = item.name;
-      render();
+      await refresh();
     })) : [node('p', '暂无消费组', 'muted')]));
   $('claim').querySelector('button').disabled = !selected || selected.paused;
   $('toggle-group').disabled = !selected;
@@ -94,6 +98,48 @@ function render() {
         await refresh();
       })]), 4, '当前频道没有死信');
   renderLeases();
+  renderShadow();
+}
+
+const shadowStatus = () => api(`${groupPath()}/shadow`);
+const shadowRequest = values => ({
+  candidate: values.candidate, tags: parse(values.tags, '候选匹配标签'),
+  ...(values.baseline ? {baseline: Number(values.baseline)} : {}),
+});
+
+function renderShadow() {
+  const selected = group();
+  const shadow = state.shadow?.observation ?? null;
+  const target = $('shadow-status');
+  const exportLink = $('shadow-export');
+  $('shadow-refresh').disabled = !selected;
+  $('shadow-form').querySelector('button[value="start"]').disabled = !selected || !!shadow;
+  $('shadow-form').querySelector('button[value="switch"]').disabled = !selected || !shadow;
+  $('shadow-form').querySelector('button[value="stop"]').disabled = !selected || !shadow;
+  exportLink.hidden = !selected;
+  if (selected) exportLink.href = `/v1${groupPath()}/shadow/evidence`;
+  if (!selected) {
+    target.replaceChildren(node('p', '请选择消费组', 'muted'));
+    return;
+  }
+  if (!shadow) {
+    target.replaceChildren(node('p', '当前消费组没有进行中的影子观测', 'muted'));
+    return;
+  }
+  const candidate = shadow.candidate;
+  const counts = shadow.summary;
+  const head = node('div', '', 'shadow-head');
+  head.append(node('p', `观测 #${shadow.id} · 比对基线 v${shadow.baseline.version} 与候选 ${candidate.name} v${candidate.version}`, 'mono'),
+    node('p', `基线标签 ${JSON.stringify(shadow.baseline.tags)}`, 'muted'),
+    node('p', `候选标签 ${JSON.stringify(candidate.tags)}`, 'muted'));
+  const metrics = node('div', '', 'shadow-metrics');
+  for (const [key, label] of [['attempts','观测发布'],['added','新增匹配'],['lost','丢失匹配'],['differing','有差异'],['delivered_to_real_group','真实分发']]) {
+    const card = node('div', '', 'stat');
+    card.append(node('strong', String(counts[key] ?? 0)), node('span', label, 'muted'));
+    metrics.append(card);
+  }
+  target.replaceChildren(head, metrics,
+    node('p', `分母：观测期 ${counts.attempts} 次发布（${counts.distinct_messages} 条消息，${counts.replayed_attempts} 次重发）；基线命中 ${counts.baseline_matched}，候选命中 ${counts.candidate_matched}`, 'muted'));
 }
 
 function renderLeases() {
@@ -198,6 +244,21 @@ $('recover').addEventListener('click', () => run(async () => {
   await refresh();
 }, $('recover')));
 $('refresh').addEventListener('click', () => run(refresh, $('refresh')));
+onForm('shadow-form', async (values, mode) => {
+  if (!group()) return;
+  if (mode === 'start') {
+    await api(`${groupPath()}/shadow`, shadowRequest(values));
+  } else if (mode === 'switch') {
+    await api(`${groupPath()}/shadow/candidate`, {
+      candidate: values.candidate, tags: parse(values.tags, '候选匹配标签'),
+    });
+  } else {
+    const reply = await api(`${groupPath()}/shadow/stop`, {});
+    notice(`观测已停止：新增 ${reply.comparison.denominator.differing} 条有差异`);
+  }
+  await refresh();
+});
+$('shadow-refresh').addEventListener('click', () => run(refresh, $('shadow-refresh')));
 $('retention-plan').addEventListener('click', () => run(async () => {
   const channel = state.channel;
   const reply = await api(`${channelPath()}/retention`);

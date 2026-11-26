@@ -4,6 +4,17 @@ from pathlib import Path
 
 from .schema import SCHEMA, VERSION
 
+# Existing databases gain subscription rule versions in place. Each group's
+# current tags become rule version 1, identical to what it has been matching
+# with, so starting a comparison never silently moves the baseline.
+MIGRATIONS = {
+    1: '''
+    ALTER TABLE subscriptions ADD COLUMN version INTEGER NOT NULL DEFAULT 1;
+    INSERT INTO subscription_rules(subscription_id,version,tags,created)
+      SELECT id,1,tags,created FROM subscriptions;
+    ''',
+}
+
 
 class RelayPersistence:
     def __init__(self, path):
@@ -11,10 +22,13 @@ class RelayPersistence:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in (0, VERSION):
+            if version not in (0, 1, VERSION):
                 raise RuntimeError(f'无法打开存储版本 {version}')
             db.execute('PRAGMA journal_mode=WAL')
-            db.executescript(f'BEGIN IMMEDIATE;\n{SCHEMA}\nPRAGMA user_version={VERSION};\nCOMMIT;')
+            steps = [f'BEGIN IMMEDIATE;\n{SCHEMA}']
+            if version in MIGRATIONS:
+                steps.append(MIGRATIONS[version])
+            db.executescript(f'{"".join(steps)}\nPRAGMA user_version={VERSION};\nCOMMIT;')
 
     @contextmanager
     def _connection(self):

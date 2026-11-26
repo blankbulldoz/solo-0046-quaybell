@@ -1,4 +1,4 @@
-VERSION = 1
+VERSION = 2
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS channels (
   name TEXT PRIMARY KEY,
@@ -20,8 +20,16 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   name TEXT NOT NULL,
   tags TEXT NOT NULL,
   paused INTEGER NOT NULL DEFAULT 0 CHECK(paused IN (0,1)),
+  version INTEGER NOT NULL DEFAULT 1,
   created REAL NOT NULL,
   UNIQUE(channel, name)
+);
+CREATE TABLE IF NOT EXISTS subscription_rules (
+  subscription_id INTEGER NOT NULL REFERENCES subscriptions(id),
+  version INTEGER NOT NULL,
+  tags TEXT NOT NULL,
+  created REAL NOT NULL,
+  PRIMARY KEY(subscription_id, version)
 );
 CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,6 +79,49 @@ CREATE TABLE IF NOT EXISTS journal (
   kind TEXT NOT NULL,
   details TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS shadow_observations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  channel TEXT NOT NULL REFERENCES channels(name),
+  subscription_id INTEGER NOT NULL REFERENCES subscriptions(id),
+  baseline_version INTEGER NOT NULL,
+  candidate_version INTEGER NOT NULL,
+  state TEXT NOT NULL CHECK(state IN ('observing','stopped')),
+  started REAL NOT NULL,
+  stopped REAL,
+  CHECK(stopped IS NULL OR stopped >= started)
+);
+CREATE TABLE IF NOT EXISTS shadow_candidates (
+  observation_id INTEGER NOT NULL REFERENCES shadow_observations(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  tags TEXT NOT NULL,
+  created REAL NOT NULL,
+  PRIMARY KEY(observation_id, version)
+);
+CREATE TABLE IF NOT EXISTS shadow_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  observation_id INTEGER NOT NULL REFERENCES shadow_observations(id) ON DELETE CASCADE,
+  message_id INTEGER NOT NULL,
+  at REAL NOT NULL,
+  repeated INTEGER NOT NULL CHECK(repeated IN (0,1)),
+  deliveries_created INTEGER NOT NULL CHECK(deliveries_created >= 0)
+);
+CREATE TABLE IF NOT EXISTS shadow_decisions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER NOT NULL UNIQUE REFERENCES shadow_events(id) ON DELETE CASCADE,
+  observation_id INTEGER NOT NULL REFERENCES shadow_observations(id) ON DELETE CASCADE,
+  message_id INTEGER NOT NULL,
+  published REAL NOT NULL,
+  producer TEXT NOT NULL,
+  dedup_key TEXT NOT NULL,
+  lane TEXT NOT NULL,
+  tags TEXT NOT NULL,
+  baseline_version INTEGER NOT NULL,
+  candidate_version INTEGER NOT NULL,
+  baseline INTEGER NOT NULL CHECK(baseline IN (0,1)),
+  candidate INTEGER NOT NULL CHECK(candidate IN (0,1)),
+  delivered INTEGER NOT NULL CHECK(delivered IN (0,1))
+);
 CREATE INDEX IF NOT EXISTS delivery_lane ON deliveries(subscription_id,lane,id)
   WHERE state IN ('waiting','leased');
 CREATE INDEX IF NOT EXISTS delivery_origin ON deliveries(message_id,id);
@@ -78,4 +129,8 @@ CREATE INDEX IF NOT EXISTS attempt_deadline ON attempts(expires,id) WHERE outcom
 CREATE UNIQUE INDEX IF NOT EXISTS one_open_attempt ON attempts(delivery_id) WHERE outcome='open';
 CREATE INDEX IF NOT EXISTS message_channel ON messages(channel,published,id);
 CREATE INDEX IF NOT EXISTS journal_message ON journal(message_id,id);
+CREATE UNIQUE INDEX IF NOT EXISTS one_active_shadow ON shadow_observations(subscription_id)
+  WHERE state='observing';
+CREATE INDEX IF NOT EXISTS shadow_decision_origin ON shadow_decisions(observation_id,id);
+CREATE INDEX IF NOT EXISTS shadow_event_origin ON shadow_events(observation_id,id);
 '''

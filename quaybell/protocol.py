@@ -13,11 +13,13 @@ class Reply:
     status: int = 200
     content_type: str = JSON
     filename: str | None = None
+    newline: bool = False
 
     def body(self):
         if isinstance(self.data, bytes):
             return self.data
-        return codec.pack(self.data).encode('ascii')
+        encoded = codec.pack(self.data)
+        return (encoded + ('' if self.newline else '')).encode('ascii')
 
 
 def receive(request):

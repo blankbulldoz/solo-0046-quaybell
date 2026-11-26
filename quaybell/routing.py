@@ -2,9 +2,15 @@ from . import catalog, subscriptions
 from .envelope import Envelope
 
 
+def accepts(tags, rules):
+    return all(tags.get(key) == value for key, value in rules.items())
+
+
 def matching(db, channel, tags):
-    return [group for group in subscriptions.for_channel(db, channel)
-            if all(tags.get(key) == value for key, value in group['tags'].items())]
+    """Groups whose registered rule version accepts these tags."""
+    return [dict(id=row['subscription_id'], name=row['group_name'], version=row['version'],
+                 tags=row['tags'], paused=row['paused'])
+            for row in subscriptions.rules_for(db, channel) if accepts(tags, row['tags'])]
 
 
 def preview(db, channel, raw):

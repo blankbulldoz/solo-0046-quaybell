@@ -1,4 +1,4 @@
-from . import catalog, claims, disposition, expiry, inputs, publication, redrive, retention, subscriptions
+from . import catalog, claims, disposition, expiry, inputs, publication, redrive, retention, shadow, subscriptions
 from .protocol import Reply
 
 
@@ -9,8 +9,16 @@ def write(db, action, args, raw, now):
         return Reply(catalog.update_policy(db, *args, raw, now), 201)
     if action == 'subscribe':
         return Reply(subscriptions.create(db, *args, raw, now), 201)
+    if action == 'rules':
+        return Reply(subscriptions.revise(db, *args, raw, now), 201)
     if action == 'pause':
         return Reply(subscriptions.pause(db, *args, raw, now))
+    if action == 'shadow_start':
+        return Reply(shadow.start(db, *args, raw, now), 201)
+    if action == 'shadow_switch':
+        return Reply(shadow.switch(db, *args, raw, now), 201)
+    if action == 'shadow_stop':
+        return Reply(shadow.stop(db, *args, raw, now))
     if action == 'publish':
         item = publication.publish(db, *args, raw, now)
         return Reply(item, 200 if item['repeated'] else 201)

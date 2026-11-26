@@ -9,10 +9,13 @@ PATTERNS = {
     'GET': (
         ('/v1/channels', 'channels'), (CHANNEL, 'board'), (CHANNEL + '/dead', 'dead'),
         (MESSAGE, 'trace'), (MESSAGE + '/evidence', 'export'), (CHANNEL + '/retention', 'retention'),
+        (GROUP + '/shadow', 'shadow'), (GROUP + '/shadow/evidence', 'shadow_export'),
     ),
     'POST': (
         ('/v1/channels', 'create_channel'), (CHANNEL + '/policy', 'revision'),
-        (CHANNEL + '/groups', 'subscribe'), (GROUP + '/pause', 'pause'),
+        (CHANNEL + '/groups', 'subscribe'), (GROUP + '/pause', 'pause'), (GROUP + '/rules', 'rules'),
+        (GROUP + '/shadow', 'shadow_start'), (GROUP + '/shadow/candidate', 'shadow_switch'),
+        (GROUP + '/shadow/stop', 'shadow_stop'),
         (CHANNEL + '/preview', 'preview'), (CHANNEL + '/messages', 'publish'),
         (GROUP + '/claim', 'claim'), (DELIVERY + '/ack', 'ack'), (DELIVERY + '/nack', 'nack'),
         ('/v1/sweep', 'sweep'), (DELIVERY + '/redrive', 'redrive'), (CHANNEL + '/retention', 'prune'),

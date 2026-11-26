@@ -1,4 +1,4 @@
-from . import catalog, deadletters, evidence, inspection, overview, retention, routing
+from . import catalog, deadletters, evidence, inspection, overview, retention, routing, shadow
 from .protocol import Reply
 
 
@@ -13,6 +13,12 @@ def read(db, action, args, now):
         return Reply(inspection.trace(db, int(args[0])))
     if action == 'retention':
         return Reply(retention.plan(db, args[0], now))
+    if action == 'shadow':
+        return Reply(shadow.describe(db, *args))
+    if action == 'shadow_export':
+        return Reply(shadow.export(db, *args, now),
+                     content_type='application/json; charset=utf-8',
+                     filename=f'quaybell-shadow-{args[0]}-{args[1]}.json')
     if action == 'export':
         return Reply(evidence.export_trace(db, int(args[0]), now),
                      content_type='application/json; charset=utf-8',

@@ -1,4 +1,4 @@
-from . import catalog, codec, delivery, journal, policy, routing
+from . import catalog, codec, delivery, inputs, journal, policy, routing, shadow
 from .envelope import Envelope
 from .errors import conflict, missing
 
@@ -17,8 +17,9 @@ def receipt(db, message, repeated):
 
 
 def publish(db, channel, raw, now):
+    observed = inputs.boolean(raw.get('observed', False), '观测标志')
     catalog.get(db, channel)
-    envelope = Envelope.from_input(raw)
+    envelope = Envelope.from_input(raw, extra=('observed',))
     encoded = envelope.encoded()
     digest = codec.fingerprint(encoded)
     existing = db.execute('SELECT * FROM messages WHERE channel=? AND producer=? AND dedup_key=?',
@@ -26,6 +27,13 @@ def publish(db, channel, raw, now):
     if existing:
         if existing['fingerprint'] != digest or existing['envelope'] != encoded:
             raise conflict('同一生产键已用于另一条消息')
+        if observed:
+            # A replay under observation is a real publication attempt; it keeps
+            # the committed receipt and creates no new deliveries, but shadow
+            # still records what it saw.
+            shadow.record(db, channel, envelope, existing['id'], now, repeated=True, deliveries_created=0)
+            journal.append(db, channel, now, 'publish_observed',
+                           {'message_id': existing['id'], 'repeated': True}, existing['id'])
         return receipt(db, existing, True)
     active = policy.read(db, channel)
     ready_at = now + envelope.delay_seconds
@@ -33,8 +41,11 @@ def publish(db, channel, raw, now):
                         VALUES (?,?,?,?,?,?,?,?,?)''',
                      (channel, envelope.producer, envelope.dedup_key, envelope.lane, encoded, digest,
                       active['version'], now, ready_at)).lastrowid
-    fanout = {}
+    fanout, rules = {}, {}
     for group in routing.matching(db, channel, envelope.tags):
         fanout[group['name']] = delivery.add(db, key, group['id'], envelope.lane, active['version'], ready_at)
-    journal.append(db, channel, now, 'published', {'fanout': fanout, 'policy': active['version']}, key)
+        rules[group['name']] = group['version']
+    journal.append(db, channel, now, 'published', {'fanout': fanout, 'policy': active['version'],
+                                                   'subscription_rules': rules}, key)
+    shadow.record(db, channel, envelope, key, now, repeated=False, deliveries_created=len(fanout))
     return dict(message_id=key, policy=active['version'], repeated=False, fanout=fanout)

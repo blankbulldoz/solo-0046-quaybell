@@ -40,6 +40,29 @@
       <button>提交新版</button>
     </form>
   </details>
+  <details data-needs-channel data-needs-group id="shadow-tools">
+    <summary>影子订阅观测</summary>
+    <div class="compact">
+      <p class="muted">候选规则只做比较，不产生任何真实分发。停止后可按观测期导出两个版本的差异。</p>
+      <form id="shadow-form" class="compact">
+        <div class="pair">
+          <label>候选规则名<input name="candidate" placeholder="narrow-feed" required></label>
+          <label>基线规则版本<input name="baseline" type="number" min="1" placeholder="留空为当前"></label>
+        </div>
+        <label>候选匹配标签<textarea name="tags" rows="2">{"feed":"telemetry"}</textarea></label>
+        <div class="button-row">
+          <button name="mode" value="start">开始观测</button>
+          <button name="mode" value="switch" class="quiet">换成候选</button>
+          <button name="mode" value="stop" class="quiet">停止观测</button>
+        </div>
+      </form>
+      <div id="shadow-status" class="shadow-status" aria-live="polite"></div>
+      <div class="button-row">
+        <a id="shadow-export" class="button-link quiet" hidden>下载差异</a>
+        <button type="button" id="shadow-refresh" class="quiet">刷新观测</button>
+      </div>
+    </div>
+  </details>
   <details data-needs-channel>
     <summary>保留复核</summary>
     <div class="compact">

@@ -42,6 +42,26 @@ class Session:
     def subscribe(self, name='oscillator', tags=None):
         return self.request(CHANNEL + '/groups', {'name': name, 'tags': tags or {}}, 201)
 
+    def revise_rules(self, name='oscillator', tags=None, expected=201):
+        return self.request(CHANNEL + f'/groups/{name}/rules', {'tags': tags or {}}, expected)
+
+    def shadow(self, name='oscillator'):
+        return self.request(CHANNEL + f'/groups/{name}/shadow')
+
+    def shadow_start(self, candidate, tags, name='oscillator', expected=201, **extra):
+        return self.request(CHANNEL + f'/groups/{name}/shadow',
+                            {'candidate': candidate, 'tags': tags} | extra, expected)
+
+    def shadow_switch(self, candidate, tags, name='oscillator', expected=201):
+        return self.request(CHANNEL + f'/groups/{name}/shadow/candidate',
+                            {'candidate': candidate, 'tags': tags}, expected)
+
+    def shadow_stop(self, name='oscillator', expected=200):
+        return self.request(CHANNEL + f'/groups/{name}/shadow/stop', {}, expected)
+
+    def shadow_evidence(self, name='oscillator'):
+        return self.request(CHANNEL + f'/groups/{name}/shadow/evidence')
+
     def publish(self, key='signal-1', lane='coil-north', expected=201, **extra):
         return self.request(CHANNEL + '/messages', envelope(key, lane, **extra), expected)
 

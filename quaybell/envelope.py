@@ -21,8 +21,8 @@ class Envelope:
     delay_seconds: int
 
     @classmethod
-    def from_input(cls, raw):
-        inputs.require(raw, ('producer','key','lane','payload'), ('tags','delay_seconds'))
+    def from_input(cls, raw, *, extra=()):
+        inputs.require(raw, ('producer','key','lane','payload'), ('tags','delay_seconds', *extra))
         result = cls(inputs.name(raw['producer'], '生产者'), inputs.token(raw['key'], '生产键'),
                      inputs.token(raw['lane'], '顺序键'), labels(raw.get('tags', {})),
                      raw['payload'], inputs.integer(raw.get('delay_seconds', 0), 0, 86400, '延迟秒数'))
