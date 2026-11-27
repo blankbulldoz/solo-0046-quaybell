@@ -1,0 +1,919 @@
+{
+  "scenario": "r050",
+  "mode": "local-synthetic-no-production-resend",
+  "clock": "fixed controlled Unix clock",
+  "incident_midnight_cst": "2026-11-27T00:00:00+08:00",
+  "payload_digest_algorithm": "sha256(quaybell.codec.pack(payload)); sort_keys and compact JSON",
+  "payload_digest": "f4135e7d751c3afe5bb0aed276580c541e6135b60896136c96bf410ecc1e8720",
+  "known_evidence": {
+    "partner_logs": [
+      {
+        "seq": 1,
+        "at": "2026-11-27T00:02:11+08:00",
+        "delivery_id": 1,
+        "attempt": 1,
+        "device_id": "DEV-24601",
+        "payload_sha256": "f4135e7d751c3afe5bb0aed276580c541e6135b60896136c96bf410ecc1e8720"
+      },
+      {
+        "seq": 2,
+        "at": "2026-11-27T00:04:37+08:00",
+        "device_id": "DEV-24601",
+        "payload_sha256": "f4135e7d751c3afe5bb0aed276580c541e6135b60896136c96bf410ecc1e8720",
+        "delivery_id": null,
+        "attempt": null,
+        "message_id": null
+      }
+    ],
+    "duty_receipt": "one unjoined redrive receipt; body fields are source_id/delivery_id/policy/repeated",
+    "relay_details": "original message details have been pruned in the incident premise"
+  },
+  "worlds": {
+    "A_old_delivery_retry": {
+      "title": "历史 A：旧分发 D1 的第 2 次尝试造成第二次处理",
+      "known_evidence_projection": [
+        {
+          "seq": 1,
+          "at": "2026-11-27T00:02:11+08:00",
+          "delivery_id": 1,
+          "attempt": 1,
+          "device_id": "DEV-24601",
+          "payload_sha256": "f4135e7d751c3afe5bb0aed276580c541e6135b60896136c96bf410ecc1e8720"
+        },
+        {
+          "seq": 2,
+          "at": "2026-11-27T00:04:37+08:00",
+          "device_id": "DEV-24601",
+          "payload_sha256": "f4135e7d751c3afe5bb0aed276580c541e6135b60896136c96bf410ecc1e8720",
+          "delivery_id": null,
+          "attempt": null,
+          "message_id": null
+        }
+      ],
+      "hidden_second_claim_if_raw_log_recovered": {
+        "delivery_id": 1,
+        "message_id": 1,
+        "attempt": 2,
+        "lease_expires": 1795709377,
+        "policy_version": 1,
+        "worker_hint": "recorded-by-relay"
+      },
+      "first_claim": {
+        "delivery_id": 1,
+        "message_id": 1,
+        "attempt": 1,
+        "lease_expires": 1795709231,
+        "policy_version": 1,
+        "worker_hint": "recorded-by-relay"
+      },
+      "publish_receipts": [
+        {
+          "fanout": {
+            "partner-consumer": 1
+          },
+          "message_id": 1,
+          "policy": 1,
+          "repeated": false
+        }
+      ],
+      "duty_receipt": {
+        "body": {
+          "delivery_id": 3,
+          "policy": 1,
+          "repeated": false,
+          "source_id": 2
+        },
+        "provenance_channel": "other-desk",
+        "provenance_database": "same local synthetic relay file",
+        "note": "回执响应本身没有 channel、device_id、message_id 或 payload 摘要"
+      },
+      "identity": {
+        "message_id": 1,
+        "delivery_id": 1,
+        "attempt": 2,
+        "parent_id": null
+      },
+      "lineage_before_cleanup": [
+        {
+          "delivery_id": 1,
+          "parent_id": null,
+          "state": "acked",
+          "policy": 1,
+          "attempts": [
+            1,
+            2
+          ],
+          "attempt_outcomes": [
+            "nacked",
+            "acked"
+          ]
+        }
+      ],
+      "evidence_sha256_before_cleanup": "567e719ba4430f5b2318a7267f534e6bad889133d3052d02aac2026c021585e2",
+      "evidence_ladder": {
+        "device_and_digest_only": {
+          "rules_out": [],
+          "raises_suspicion_for": [
+            "new_publication",
+            "old_delivery_retry",
+            "redrive_new_delivery"
+          ],
+          "reason": "三种历史都能发布/携带完全相同的规范化载荷。"
+        },
+        "unlinked_redrive_receipt": {
+          "rules_out": [],
+          "raises_suspicion_for": [
+            "redrive_new_delivery"
+          ],
+          "reason": "回执没有设备、载荷、消息号或时间；不与第二条日志的中继 ID 连接就没有排除力。"
+        },
+        "complete_second_consumer_log": {
+          "observation": {
+            "delivery_id": 1,
+            "attempt": 2
+          },
+          "rules_out": [
+            "new_publication",
+            "redrive_new_delivery"
+          ],
+          "supports": "old_delivery_retry",
+          "decisive": true
+        },
+        "message_identity": {
+          "observation": {
+            "message_id": 1
+          },
+          "rules_out": [
+            "new_publication"
+          ],
+          "still_open": [
+            "old_delivery_retry",
+            "redrive_new_delivery"
+          ],
+          "decisive": false
+        },
+        "lineage_or_pre_cleanup_trace": {
+          "observation": {
+            "delivery_id": 1,
+            "parent_id": null,
+            "attempt": 2
+          },
+          "confirms": "same_delivery_retry",
+          "rules_out": [
+            "new_publication",
+            "redrive_new_delivery"
+          ],
+          "decisive": true
+        }
+      },
+      "post_cleanup": {
+        "prune_response": {
+          "removed": [
+            1
+          ],
+          "observed_at": 1795716000
+        },
+        "target_channel_counts_after_delete": {
+          "messages": 0,
+          "deliveries": 0,
+          "attempts": 0,
+          "message_level_journal": 0
+        },
+        "surviving_journal_kinds": [
+          {
+            "kind": "channel_created",
+            "count": 1
+          },
+          {
+            "kind": "pruned",
+            "count": 1
+          },
+          {
+            "kind": "subscribed",
+            "count": 1
+          }
+        ],
+        "surviving_prune_record": [
+          {
+            "id": 16,
+            "at": 1795716000.0,
+            "kind": "pruned",
+            "details": {
+              "message_ids": [
+                1
+              ]
+            }
+          }
+        ],
+        "receipt_child_lookup_in_current_db": {
+          "delivery_id": 3,
+          "message_id": 2,
+          "parent_id": 2,
+          "channel": "other-desk",
+          "state": "acked"
+        },
+        "interpretation": "消息、分发、尝试和消息级事件被级联删除；无 message_id 的频道级 pruned 记录保留。"
+      }
+    },
+    "B_redrive_new_delivery": {
+      "title": "历史 B：D1 耗尽后死信，重投追加 D2，D2 attempt=1 造成第二次处理",
+      "known_evidence_projection": [
+        {
+          "seq": 1,
+          "at": "2026-11-27T00:02:11+08:00",
+          "delivery_id": 1,
+          "attempt": 1,
+          "device_id": "DEV-24601",
+          "payload_sha256": "f4135e7d751c3afe5bb0aed276580c541e6135b60896136c96bf410ecc1e8720"
+        },
+        {
+          "seq": 2,
+          "at": "2026-11-27T00:04:37+08:00",
+          "device_id": "DEV-24601",
+          "payload_sha256": "f4135e7d751c3afe5bb0aed276580c541e6135b60896136c96bf410ecc1e8720",
+          "delivery_id": null,
+          "attempt": null,
+          "message_id": null
+        }
+      ],
+      "hidden_second_claim_if_raw_log_recovered": {
+        "delivery_id": 2,
+        "message_id": 1,
+        "attempt": 1,
+        "lease_expires": 1795709377,
+        "policy_version": 1,
+        "worker_hint": "recorded-by-relay"
+      },
+      "first_claim": {
+        "delivery_id": 1,
+        "message_id": 1,
+        "attempt": 1,
+        "lease_expires": 1795709231,
+        "policy_version": 1,
+        "worker_hint": "recorded-by-relay"
+      },
+      "publish_receipts": [
+        {
+          "fanout": {
+            "partner-consumer": 1
+          },
+          "message_id": 1,
+          "policy": 1,
+          "repeated": false
+        }
+      ],
+      "duty_receipt": {
+        "body": {
+          "delivery_id": 2,
+          "policy": 1,
+          "repeated": false,
+          "source_id": 1
+        },
+        "provenance_channel": "incident-r050",
+        "provenance_database": "the synthetic incident DB",
+        "note": "这张回执在本历史中确实对应第二条日志，但第二条日志本身没有 D2 可与之连接。"
+      },
+      "identity": {
+        "message_id": 1,
+        "delivery_id": 2,
+        "attempt": 1,
+        "parent_id": 1
+      },
+      "lineage_before_cleanup": [
+        {
+          "delivery_id": 1,
+          "parent_id": null,
+          "state": "dead",
+          "policy": 1,
+          "attempts": [
+            1
+          ],
+          "attempt_outcomes": [
+            "nacked"
+          ]
+        },
+        {
+          "delivery_id": 2,
+          "parent_id": 1,
+          "state": "acked",
+          "policy": 1,
+          "attempts": [
+            1
+          ],
+          "attempt_outcomes": [
+            "acked"
+          ]
+        }
+      ],
+      "evidence_sha256_before_cleanup": "ac44b80b7128d545e6aa7ff427b5f0fab39379ed88cb9dceadd87150ca299db3",
+      "evidence_ladder": {
+        "device_and_digest_only": {
+          "rules_out": [],
+          "raises_suspicion_for": [
+            "new_publication",
+            "old_delivery_retry",
+            "redrive_new_delivery"
+          ],
+          "reason": "三种历史都能发布/携带完全相同的规范化载荷。"
+        },
+        "unlinked_redrive_receipt": {
+          "rules_out": [],
+          "raises_suspicion_for": [
+            "redrive_new_delivery"
+          ],
+          "reason": "回执没有设备、载荷、消息号或时间；不与第二条日志的中继 ID 连接就没有排除力。"
+        },
+        "complete_second_consumer_log": {
+          "observation": {
+            "delivery_id": 2,
+            "attempt": 1
+          },
+          "rules_out": [
+            "old_delivery_retry"
+          ],
+          "still_open": [
+            "new_publication",
+            "redrive_new_delivery"
+          ],
+          "decisive": false,
+          "reason": "新分发号和 attempt=1 同时符合新发布与重投后继。"
+        },
+        "message_identity": {
+          "observation": {
+            "message_id": 1
+          },
+          "rules_out": [
+            "new_publication"
+          ],
+          "still_open": [
+            "old_delivery_retry",
+            "redrive_new_delivery"
+          ],
+          "decisive": false
+        },
+        "lineage_or_pre_cleanup_trace": {
+          "observation": {
+            "message_id": 1,
+            "delivery_id": 2,
+            "parent_id": 1
+          },
+          "rules_out": [
+            "new_publication",
+            "old_delivery_retry"
+          ],
+          "confirms": "redrive_new_delivery",
+          "decisive": true
+        }
+      },
+      "post_cleanup": {
+        "prune_response": {
+          "removed": [
+            1
+          ],
+          "observed_at": 1795716000
+        },
+        "target_channel_counts_after_delete": {
+          "messages": 0,
+          "deliveries": 0,
+          "attempts": 0,
+          "message_level_journal": 0
+        },
+        "surviving_journal_kinds": [
+          {
+            "kind": "channel_created",
+            "count": 1
+          },
+          {
+            "kind": "pruned",
+            "count": 1
+          },
+          {
+            "kind": "subscribed",
+            "count": 1
+          }
+        ],
+        "surviving_prune_record": [
+          {
+            "id": 9,
+            "at": 1795716000.0,
+            "kind": "pruned",
+            "details": {
+              "message_ids": [
+                1
+              ]
+            }
+          }
+        ],
+        "receipt_child_lookup_in_current_db": null,
+        "interpretation": "消息、分发、尝试和消息级事件被级联删除；无 message_id 的频道级 pruned 记录保留。"
+      }
+    },
+    "C_new_publication": {
+      "title": "历史 C：另一个生产键发起真正的新发布，生成 M2/D2 attempt=1",
+      "known_evidence_projection": [
+        {
+          "seq": 1,
+          "at": "2026-11-27T00:02:11+08:00",
+          "delivery_id": 1,
+          "attempt": 1,
+          "device_id": "DEV-24601",
+          "payload_sha256": "f4135e7d751c3afe5bb0aed276580c541e6135b60896136c96bf410ecc1e8720"
+        },
+        {
+          "seq": 2,
+          "at": "2026-11-27T00:04:37+08:00",
+          "device_id": "DEV-24601",
+          "payload_sha256": "f4135e7d751c3afe5bb0aed276580c541e6135b60896136c96bf410ecc1e8720",
+          "delivery_id": null,
+          "attempt": null,
+          "message_id": null
+        }
+      ],
+      "hidden_second_claim_if_raw_log_recovered": {
+        "delivery_id": 2,
+        "message_id": 2,
+        "attempt": 1,
+        "lease_expires": 1795709377,
+        "policy_version": 1,
+        "worker_hint": "recorded-by-relay"
+      },
+      "first_claim": {
+        "delivery_id": 1,
+        "message_id": 1,
+        "attempt": 1,
+        "lease_expires": 1795709231,
+        "policy_version": 1,
+        "worker_hint": "recorded-by-relay"
+      },
+      "publish_receipts": [
+        {
+          "fanout": {
+            "partner-consumer": 1
+          },
+          "message_id": 1,
+          "policy": 1,
+          "repeated": false
+        },
+        {
+          "fanout": {
+            "partner-consumer": 1
+          },
+          "message_id": 1,
+          "policy": 1,
+          "repeated": true
+        },
+        {
+          "fanout": {
+            "partner-consumer": 2
+          },
+          "message_id": 2,
+          "policy": 1,
+          "repeated": false
+        }
+      ],
+      "same_key_republish_control": {
+        "request": "same producer/key and identical envelope before cleanup",
+        "response": {
+          "fanout": {
+            "partner-consumer": 1
+          },
+          "message_id": 1,
+          "policy": 1,
+          "repeated": true
+        },
+        "new_delivery_created": false
+      },
+      "duty_receipt": {
+        "body": {
+          "delivery_id": 4,
+          "policy": 1,
+          "repeated": false,
+          "source_id": 3
+        },
+        "provenance_channel": "other-desk",
+        "provenance_database": "same local synthetic relay file",
+        "note": "回执响应本身没有 channel、device_id、message_id 或 payload 摘要"
+      },
+      "identity": {
+        "message_id": 2,
+        "delivery_id": 2,
+        "attempt": 1,
+        "parent_id": null
+      },
+      "lineage_before_cleanup": {
+        "message_1": [
+          {
+            "delivery_id": 1,
+            "parent_id": null,
+            "state": "acked",
+            "policy": 1,
+            "attempts": [
+              1
+            ],
+            "attempt_outcomes": [
+              "acked"
+            ]
+          }
+        ],
+        "message_2": [
+          {
+            "delivery_id": 2,
+            "parent_id": null,
+            "state": "acked",
+            "policy": 1,
+            "attempts": [
+              1
+            ],
+            "attempt_outcomes": [
+              "acked"
+            ]
+          }
+        ]
+      },
+      "evidence_sha256_before_cleanup": {
+        "message_1": "4145719079640f1dc12b5966cbc5ac18cff7ecddf4a5d97df012f6d322b2ab27",
+        "message_2": "a505bb532d87f1a68b2316ac4399225b2c4be6ffbf7c8581e9bcb67f1863f46f"
+      },
+      "evidence_ladder": {
+        "device_and_digest_only": {
+          "rules_out": [],
+          "raises_suspicion_for": [
+            "new_publication",
+            "old_delivery_retry",
+            "redrive_new_delivery"
+          ],
+          "reason": "三种历史都能发布/携带完全相同的规范化载荷。"
+        },
+        "unlinked_redrive_receipt": {
+          "rules_out": [],
+          "raises_suspicion_for": [
+            "redrive_new_delivery"
+          ],
+          "reason": "回执没有设备、载荷、消息号或时间；不与第二条日志的中继 ID 连接就没有排除力。"
+        },
+        "complete_second_consumer_log": {
+          "observation": {
+            "delivery_id": 2,
+            "attempt": 1
+          },
+          "rules_out": [
+            "old_delivery_retry"
+          ],
+          "still_open": [
+            "new_publication",
+            "redrive_new_delivery"
+          ],
+          "decisive": false,
+          "reason": "新分发号和 attempt=1 同时符合新发布与重投后继。"
+        },
+        "message_identity": {
+          "observation": {
+            "message_id": 2
+          },
+          "rules_out": [
+            "redrive_of_known_delivery_1"
+          ],
+          "still_open": [
+            "new_publication",
+            "redrive_of_unknown_other_source"
+          ],
+          "decisive": false,
+          "reason": "重投不换 message_id；但若记录不完整，仍需排除另一条同载荷消息。"
+        },
+        "lineage_or_pre_cleanup_trace": {
+          "observation": {
+            "message_id": 2,
+            "delivery_id": 2,
+            "parent_id": null
+          },
+          "rules_out": [
+            "old_delivery_retry",
+            "redrive_of_known_delivery_1"
+          ],
+          "confirms": "new_publication_when_publish_ledger_matches",
+          "decisive": true
+        }
+      },
+      "post_cleanup": {
+        "prune_response": {
+          "removed": [
+            1,
+            2
+          ],
+          "observed_at": 1795716000
+        },
+        "target_channel_counts_after_delete": {
+          "messages": 0,
+          "deliveries": 0,
+          "attempts": 0,
+          "message_level_journal": 0
+        },
+        "surviving_journal_kinds": [
+          {
+            "kind": "channel_created",
+            "count": 1
+          },
+          {
+            "kind": "pruned",
+            "count": 1
+          },
+          {
+            "kind": "subscribed",
+            "count": 1
+          }
+        ],
+        "surviving_prune_record": [
+          {
+            "id": 17,
+            "at": 1795716000.0,
+            "kind": "pruned",
+            "details": {
+              "message_ids": [
+                1,
+                2
+              ]
+            }
+          }
+        ],
+        "receipt_child_lookup_in_current_db": {
+          "delivery_id": 4,
+          "message_id": 3,
+          "parent_id": 3,
+          "channel": "other-desk",
+          "state": "acked"
+        },
+        "interpretation": "消息、分发、尝试和消息级事件被级联删除；无 message_id 的频道级 pruned 记录保留。"
+      }
+    }
+  },
+  "controls": {
+    "same_identity_projection_asserted_for": [
+      "A_old_delivery_retry",
+      "B_redrive_new_delivery",
+      "C_new_publication"
+    ],
+    "same_key_before_cleanup": {
+      "request": "same producer/key and identical envelope before cleanup",
+      "response": {
+        "fanout": {
+          "partner-consumer": 1
+        },
+        "message_id": 1,
+        "policy": 1,
+        "repeated": true
+      },
+      "new_delivery_created": false
+    },
+    "production_key_reuse_after_cleanup": {
+      "title": "对照 D：清理后复用同一 producer/key 会形成新消息，而不是 repeated 回执",
+      "first_publish": {
+        "fanout": {
+          "partner-consumer": 1
+        },
+        "message_id": 1,
+        "policy": 1,
+        "repeated": false
+      },
+      "prune_at": 1800100061,
+      "second_publish_at": 1800100120,
+      "second_log_at": 1800100120,
+      "second_publish_after_prune": {
+        "fanout": {
+          "partner-consumer": 2
+        },
+        "message_id": 2,
+        "policy": 1,
+        "repeated": false
+      },
+      "second_claim": {
+        "delivery_id": 2,
+        "message_id": 2,
+        "attempt": 1,
+        "lease_expires": 1800100180,
+        "policy_version": 1,
+        "worker_hint": "recorded-by-relay"
+      },
+      "temporal_exclusion": {
+        "rule": "second_log_at > prune_at excludes retry/redrive of pruned M1",
+        "passed": true
+      },
+      "timeline_rule": "若可信的第二条日志时间晚于删除 M1 的 pruned 记录时间，M1 的旧重试/重投在该库中已不可能；应转向新发布或其他来源。"
+    }
+  },
+  "verification_checks": [
+    {
+      "check": "A_old_delivery_retry: same残缺日志投影",
+      "passed": true
+    },
+    {
+      "check": "A_old_delivery_retry: relay rows are pruned",
+      "passed": true
+    },
+    {
+      "check": "A_old_delivery_retry: channel-level pruned journal survives",
+      "passed": true
+    },
+    {
+      "check": "A_old_delivery_retry: receipt alone lacks join keys",
+      "passed": true,
+      "receipt_keys": [
+        "delivery_id",
+        "policy",
+        "repeated",
+        "source_id"
+      ]
+    },
+    {
+      "check": "B_redrive_new_delivery: same残缺日志投影",
+      "passed": true
+    },
+    {
+      "check": "B_redrive_new_delivery: relay rows are pruned",
+      "passed": true
+    },
+    {
+      "check": "B_redrive_new_delivery: channel-level pruned journal survives",
+      "passed": true
+    },
+    {
+      "check": "B_redrive_new_delivery: receipt alone lacks join keys",
+      "passed": true,
+      "receipt_keys": [
+        "delivery_id",
+        "policy",
+        "repeated",
+        "source_id"
+      ]
+    },
+    {
+      "check": "C_new_publication: same残缺日志投影",
+      "passed": true
+    },
+    {
+      "check": "C_new_publication: relay rows are pruned",
+      "passed": true
+    },
+    {
+      "check": "C_new_publication: channel-level pruned journal survives",
+      "passed": true
+    },
+    {
+      "check": "C_new_publication: receipt alone lacks join keys",
+      "passed": true,
+      "receipt_keys": [
+        "delivery_id",
+        "policy",
+        "repeated",
+        "source_id"
+      ]
+    },
+    {
+      "check": "same D + larger attempt rules out publish/redrive",
+      "passed": true,
+      "confirms": "old_delivery_retry"
+    },
+    {
+      "check": "same D + same A rules out all three relay replacement histories",
+      "passed": true,
+      "indicates": "same_attempt_duplicate_processing_or_log"
+    },
+    {
+      "check": "same M + parent D1 rules out publish/retry",
+      "passed": true,
+      "confirms": "redrive_new_delivery"
+    },
+    {
+      "check": "new M + parent NULL plus ledger rules out known lineage",
+      "passed": true,
+      "confirms": "new_publication"
+    },
+    {
+      "check": "post-prune timestamp makes old M1 lineage impossible",
+      "passed": true,
+      "prune_at": 1800100061,
+      "second_log_at": 1800100120
+    }
+  ],
+  "evidence_matrix": [
+    {
+      "evidence": "设备号相同 + 载荷 SHA-256/规范化摘要相同 + 时间接近",
+      "can_rule_out": [],
+      "only_raises_suspicion_for": [
+        "new_publication",
+        "old_delivery_retry",
+        "redrive_new_delivery"
+      ],
+      "why": "三个合成历史使用同一 PAYLOAD 均可复现。"
+    },
+    {
+      "evidence": "值班员持有的重投回执，但未与第二条日志的 delivery_id/时间连接",
+      "can_rule_out": [],
+      "only_raises_suspicion_for": [
+        "redrive_new_delivery"
+      ],
+      "why": "Quaybell 回执体只有 source_id、delivery_id、policy、repeated；没有设备、载荷、message_id、频道或时间。"
+    },
+    {
+      "evidence": "合作方原始日志补全：第二条仍是 D1，attempt=2（或更大）",
+      "can_rule_out": [
+        "new_publication",
+        "redrive_new_delivery"
+      ],
+      "supports": "old_delivery_retry",
+      "why": "新发布和重投都追加新的 delivery 行；旧尝试只增加 attempt。"
+    },
+    {
+      "evidence": "合作方原始日志补全：第二条仍是 D1，且 attempt 与第一条相同（同为 A1）",
+      "can_rule_out": [
+        "new_publication",
+        "old_delivery_retry",
+        "redrive_new_delivery"
+      ],
+      "supports": "same_attempt_duplicate_processing_or_log",
+      "why": "中继重试会生成更大的 attempt；相同 D/A 的重复更像消费者内部重试、日志重复或 ack 回执重试。"
+    },
+    {
+      "evidence": "合作方原始日志补全：第二条是 D2、attempt=1，但没有 message_id/parent",
+      "can_rule_out": [
+        "old_delivery_retry"
+      ],
+      "still_cannot_distinguish": [
+        "new_publication",
+        "redrive_new_delivery"
+      ],
+      "why": "两种机制都会产生新的 delivery_id 且首次尝试为 1。"
+    },
+    {
+      "evidence": "清理前 evidence 导出/备份显示两条处理共享 M1",
+      "can_rule_out": [
+        "new_publication"
+      ],
+      "still_cannot_distinguish_without_delivery_or_parent": [
+        "old_delivery_retry",
+        "redrive_new_delivery"
+      ],
+      "why": "真正的新发布有新 message_id；重投保留原 message_id。"
+    },
+    {
+      "evidence": "M1 trace/evidence 显示 D2.parent_id=D1 且有 redriven 事件，D2 对应第二条日志",
+      "can_rule_out": [
+        "new_publication",
+        "old_delivery_retry"
+      ],
+      "confirms": "redrive_new_delivery",
+      "why": "谱系和 redriven 审计事件把回执、后继分发与第二条日志连起来。"
+    },
+    {
+      "evidence": "生产者 outbox/发布回执/访问日志显示第二个生产身份或清理后的新 M2，且其 fanout D2 对应第二条日志",
+      "can_rule_out": [
+        "old_delivery_retry",
+        "redrive_new_delivery"
+      ],
+      "confirms": "new_publication",
+      "why": "重试/重投不会创建新的生产消息；同键同信封在清理前只会 repeated 到原 M1。"
+    },
+    {
+      "evidence": "当前库幸存的 pruned 频道日志 + 可信时钟证明第二条日志晚于该 M1 的删除事务",
+      "can_rule_out": [
+        "old_delivery_retry_of_M1",
+        "redrive_of_M1"
+      ],
+      "supports": "new_publication_or_other_source",
+      "why": "messages 删除级联删除 deliveries/attempts；删除后旧 ID 不可能再被领取，原生产键可复用。结论以现网库未被清理前快照回滚为前提。"
+    },
+    {
+      "evidence": "同一 worker/IP、相似堆栈或业务报错文案",
+      "can_rule_out": [],
+      "only_raises_suspicion_for": [],
+      "why": "租约到期、nack 后换 worker、重投后换 worker 都可能出现相同或不同执行位置；不是身份证据。"
+    },
+    {
+      "evidence": "evidence JSON 重算 sha256 一致",
+      "can_rule_out": [],
+      "why": "只能证明拿到的导出未损坏/与摘要自洽；SHA 不是外部签名，仍需从可信导出桶、值班终端或备份证明来源。"
+    }
+  ],
+  "first_contact_order": [
+    {
+      "who": "合作方值班/日志管理员",
+      "ask_for": "不要重发；导出午夜窗口两条原始日志及完整字段：message_id、delivery_id、lease/attempt.number、worker、trace-id、精确时间戳、日志采集时间和摘要算法。",
+      "why_first": "第二条日志的中继 ID 是区分三种机制成本最低的钥匙。"
+    },
+    {
+      "who": "本方持有重投回执的值班员",
+      "ask_for": "回执原件/截图/响应体、来源环境与频道、执行时间、操作人、终端或工单；核对 source_id/delivery_id/repeated，并寻找当时的 evidence 导出。",
+      "why_second": "可立即判断回执是否与第一条 D1 同源，以及应查哪个 M1/备份。"
+    },
+    {
+      "who": "Quaybell 库 owner/DBA 或备份负责人",
+      "ask_for": "当前 SQLite、WAL、清理任务日志、清理前快照/备份、对象存储中的 quaybell-trace/1；先查无 message_id 的 journal pruned 记录，不要继续清理或覆盖文件。",
+      "why_third": "当前库可能只剩 pruned 消息 ID；完整谱系通常要靠导出或清理前备份。"
+    },
+    {
+      "who": "生产者/网关负责人",
+      "ask_for": "同一设备与摘要在窗口内的 outbox、发布回执、幂等键、producer/key、HTTP 访问日志和响应 message_id/fanout。",
+      "why_fourth": "用于证明是否存在第二个生产身份，以及清理后是否复用了旧键。"
+    }
+  ],
+  "all_checks_passed": true
+}

@@ -55,3 +55,7 @@ python3 -m examples.walkthrough export
 ```
 
 每个工作流示例使用临时 SQLite 文件、受控时钟和本机随机端口，运行完即释放。可用 `python3 -m examples.walkthrough --help` 列出所有工作流。正式测试套件延后建设。
+
+## 故障诊断对照
+
+`incidents/r050/` 保存“同一载荷半夜处理两次、只剩一条分发/尝试日志和一条设备/摘要日志”的可复跑对照。运行 `python3 incidents/r050/reproduce.py` 可在临时库中复现旧分发重试、死信重投后继和新发布三种历史，并生成证据排除矩阵与补证联系人顺序。该脚本只使用本机回环和固定时钟，不向现场重发。
