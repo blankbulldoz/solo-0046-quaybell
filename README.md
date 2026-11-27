@@ -55,3 +55,17 @@ python3 -m examples.walkthrough export
 ```
 
 每个工作流示例使用临时 SQLite 文件、受控时钟和本机随机端口，运行完即释放。可用 `python3 -m examples.walkthrough --help` 列出所有工作流。正式测试套件延后建设。
+
+## 切换窗口演练
+
+`docs/window_rehearsal.py` 用本机真实例复现两段候选切换窗口（09:00 / 09:40），对比“窗口点直接关停老端”与“先暂停、老端按原租约排空、再恢复新端”两种做法，并附租约延长、暂停回滚、有界回收三项交叉检查。产物：
+
+```sh
+python3 -I docs/window_rehearsal.py --json docs/rehearsal-facts.json --markdown docs/window-rehearsal-record.md
+```
+
+- `docs/window-proposal.md`：一页窗口提案（结论、在途风险、排空残留、暂停/放弃证据、交接核对点）。
+- `docs/window-rehearsal-record.md`：逐拍记录表（自动生成，可重放）。
+- `docs/rehearsal-facts.json`：完整事实，含每次观测的组计数、死信、证据摘要。
+
+演练只读公开 HTTP 入口，使用临时 SQLite 与受控时钟，不触碰 `.quaybell/` 状态库；现场的流量形状与老端确认节奏需在窗口定档前用实测替换。
