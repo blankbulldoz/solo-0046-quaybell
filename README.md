@@ -48,10 +48,18 @@ python3 -m quaybell --demo
 ## 构建与生产工作流
 
 ```sh
-python3 -m compileall -q quaybell examples
+python3 -m compileall -q quaybell examples tests
 python3 -m examples.walkthrough claim
 python3 -m examples.walkthrough retention
 python3 -m examples.walkthrough export
+python3 -m unittest discover -s tests -v
 ```
 
-每个工作流示例使用临时 SQLite 文件、受控时钟和本机随机端口，运行完即释放。可用 `python3 -m examples.walkthrough --help` 列出所有工作流。正式测试套件延后建设。
+`tests/test_publish_crash_recovery.py` 启动真实 HTTP + SQLite 子进程，保留两个可重复的崩溃边界验收：
+
+- `test_fanout_crash_after_first_matching_group_rolls_back_entire_publication`：首个匹配组的 `deliveries` 插入已返回、第二个匹配组尚未写入时 `SIGKILL`。重启后先取证消息、生产键、分发和 `published` 事件均为零，再重发原生产键，期望得到新的 `201` 回执。
+- `test_committed_publication_with_lost_response_resends_same_receipt`：发布事务提交后、HTTP 响应字节发出前 `SIGKILL`。重启后先取证一条消息和两个匹配组分发已完整存在，再重发原生产键，期望得到 `200 repeated=true` 和同一组分发 ID。
+
+两个用例都使用原始套接字只发送第一次请求，并断言客户端收到零字节回复；随后由 alpha、beta 两个匹配组分别独立领取并确认各自投递，gamma 不匹配组领取为空。确认回执及其重试结果、重启后的 SQLite 行状态共同作为恢复证据。测试辅助进程 `tests/crash_server.py` 通过临时 monkeypatch 精确触发边界，不需要改动生产事务代码。
+
+每个工作流示例使用临时 SQLite 文件、受控时钟和本机随机端口，运行完即释放。可用 `python3 -m examples.walkthrough --help` 列出所有工作流。
