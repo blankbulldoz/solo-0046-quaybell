@@ -54,4 +54,18 @@ python3 -m examples.walkthrough retention
 python3 -m examples.walkthrough export
 ```
 
-每个工作流示例使用临时 SQLite 文件、受控时钟和本机随机端口，运行完即释放。可用 `python3 -m examples.walkthrough --help` 列出所有工作流。正式测试套件延后建设。
+每个工作流示例使用临时 SQLite 文件、受控时钟和本机随机端口，运行完即释放。可用 `python3 -m examples.walkthrough --help` 列出所有工作流。
+
+## 租约截止点验收
+
+`tests/` 下有一套可重复的自动验收，专注租约截止点附近 ACK 与回收的并发行为。
+它不依赖第三方包，只用 Python 自带的 `unittest`：
+
+```sh
+python3 -m unittest discover -s tests -t . -v   # 全部用例
+python3 -m tests.contract                        # 打印不变量 / 调度可变分类表
+```
+
+用例分别覆盖截止前（`E-1`）、等于截止（`E`）和回收后已签发新租约（`>E`）三种输入，
+并区分"每次都成立的身份与尝试记录"和"允许随调度变化的观察"。分类与逐条说明见
+`docs/lease-deadline-acceptance.md`。

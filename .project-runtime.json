@@ -73,6 +73,10 @@
     {
       "workflow_id": "export",
       "command": "python3 -m examples.walkthrough export"
+    },
+    {
+      "workflow_id": "lease_deadline_acceptance",
+      "command": "python3 -m unittest discover -s tests -t ."
     }
   ]
 }

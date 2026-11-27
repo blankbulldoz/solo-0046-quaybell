@@ -18,4 +18,4 @@ Quaybell 是面向内部服务集成的持久消息中间件。应用通过 HTTP
 
 ## 验证边界
 
-`examples.walkthrough` 每次起一个真实 HTTP 实例，通过公共入口展示成功和边界拒绝。当前发布用这些有界生产工作流做验证。独立测试套件延后建设。
+`examples.walkthrough` 每次起一个真实 HTTP 实例，通过公共入口展示成功和边界拒绝。当前发布用这些有界生产工作流做验证。`tests/` 提供租约截止点的可重复自动验收，用受控时钟覆盖截止前、等于截止与回收后三种输入，详见 `docs/lease-deadline-acceptance.md`。
