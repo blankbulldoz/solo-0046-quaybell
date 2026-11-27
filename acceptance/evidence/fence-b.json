@@ -1,0 +1,14 @@
+{
+  "channel": "rollout-proof",
+  "cluster": "quaybell-rolling-acceptance",
+  "committed_via": "http://127.0.0.1:18091",
+  "created": 1795740694.1900756,
+  "db_realpath": "/workspace/.rollout-lab/common/quaybell.sqlite3",
+  "fence_id": 2,
+  "fingerprint": "129d5e0106b8edfd640e284a18f8a1b12ba2648e750cc494a5eba6d0c533142e",
+  "journal_watermark": 13,
+  "message_id": 6,
+  "nonce": "dc8aed4394ccf0dd725de88b",
+  "note": "replace node B",
+  "spec_version": 1
+}

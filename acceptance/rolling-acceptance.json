@@ -1,0 +1,581 @@
+{
+  "generated_at": "2026-11-27T00:51:33+00:00",
+  "overall_ok": true,
+  "checks": [
+    {
+      "name": "init_cluster_rc0",
+      "result": "PASS",
+      "summary": "rc=0"
+    },
+    {
+      "name": "two_nodes_boot_guarded",
+      "result": "PASS",
+      "summary": "A=baseline-r053 B=baseline-r053"
+    },
+    {
+      "name": "boot_guard_pass_line",
+      "result": "PASS",
+      "summary": "两个初始进程的日志均有 QB_GUARD_PASS"
+    },
+    {
+      "name": "create_lease_channel",
+      "result": "PASS",
+      "summary": "status=201"
+    },
+    {
+      "name": "create_gears_group",
+      "result": "PASS",
+      "summary": "status=201"
+    },
+    {
+      "name": "create_proof_channel",
+      "result": "PASS",
+      "summary": "status=201"
+    },
+    {
+      "name": "create_flow_channel",
+      "result": "PASS",
+      "summary": "status=201"
+    },
+    {
+      "name": "create_flow_group",
+      "result": "PASS",
+      "summary": "status=201"
+    },
+    {
+      "name": "publish_m1",
+      "result": "PASS",
+      "summary": "status=201 id=1"
+    },
+    {
+      "name": "publish_m2",
+      "result": "PASS",
+      "summary": "status=201 id=2"
+    },
+    {
+      "name": "race1_no_http_errors",
+      "result": "PASS",
+      "summary": "errors=0 busy=0"
+    },
+    {
+      "name": "race1_exactly_one_lease_for_head",
+      "result": "PASS",
+      "summary": "winners=1 total_items=1"
+    },
+    {
+      "name": "race1_successor_never_leased",
+      "result": "PASS",
+      "summary": "d2_items=0"
+    },
+    {
+      "name": "race1_single_open_attempt_in_db",
+      "result": "PASS",
+      "summary": "partial unique index + BEGIN IMMEDIATE 后仅一行 open 尝试"
+    },
+    {
+      "name": "race1_token_digest_matches_db",
+      "result": "PASS",
+      "summary": "attempt=#1 via port 18091"
+    },
+    {
+      "name": "decoy_copy_rc0",
+      "result": "PASS",
+      "summary": "sha256=d2fd1fecdea72fd2…"
+    },
+    {
+      "name": "restored_copy_rc0",
+      "result": "PASS"
+    },
+    {
+      "name": "freeze_logical_hashes_equal",
+      "result": "PASS",
+      "summary": "复制瞬间两份库核心状态逻辑哈希一致"
+    },
+    {
+      "name": "freeze_lease_identical_in_copy",
+      "result": "PASS",
+      "summary": "attempt#1 race-one-4 expires=1795740701.5172253"
+    },
+    {
+      "name": "copy_taken_while_lease_alive",
+      "result": "PASS",
+      "summary": "now=1795740693.6 expires=1795740701.5"
+    },
+    {
+      "name": "decoy_http_trace_same_initially",
+      "result": "PASS",
+      "summary": "A、B 共库端与误连 C 起初经 HTTP 给出完全相同的消息指纹和租约摘要"
+    },
+    {
+      "name": "naive_channel_name_check_passes_on_decoy",
+      "result": "PASS",
+      "summary": "两端频道名一致: ['rollout-flow', 'rollout-lease', 'rollout-proof']（证明只查频道名无法识别误连）"
+    },
+    {
+      "name": "fence_a_created",
+      "result": "PASS",
+      "summary": "{   \"ok\": true,   \"http_status\": 201,   \"spec_path\": \"/workspace/.rollout-lab/specs/fence-a.json\",   \"fence_id\": 1,   \"message_id\": 3,   \"journal_watermark\": 9 }"
+    },
+    {
+      "name": "launch_rejects_wrong_path_exit3",
+      "result": "PASS",
+      "summary": "rc=3 code=DB_PATH_MISMATCH"
+    },
+    {
+      "name": "launch_rejects_stale_replica_exit4",
+      "result": "PASS",
+      "summary": "rc=4 code=STALE_REPLICA"
+    },
+    {
+      "name": "verify_common_rc0",
+      "result": "PASS",
+      "summary": "rc=0"
+    },
+    {
+      "name": "verify_stale_nonzero_with_failing_checks",
+      "result": "PASS",
+      "summary": "rc=3 failures=['path_pin', 'fence_row', 'fence_message', 'journal_watermark']"
+    },
+    {
+      "name": "node_a_stopped_one_at_a_time",
+      "result": "PASS",
+      "summary": "A0 已停止，B0 仍在服务"
+    },
+    {
+      "name": "partner_b_takes_work_while_a_down",
+      "result": "PASS",
+      "summary": "发布=201 领取条数=1（不确认，租约自然保留）"
+    },
+    {
+      "name": "a1_guarded_boot_pass",
+      "result": "PASS",
+      "summary": "QB_GUARD_PASS {\"cluster\": \"quaybell-rolling-acceptance\", \"candidate\": \"/workspace/.rollout-lab/common/quaybell.sqlite3\", \"journal_max\": 11, \"fence\": \"fence=#1\"}"
+    },
+    {
+      "name": "a1_release_header_new",
+      "result": "PASS",
+      "summary": "X-Quaybell-Release=candidate-r053"
+    },
+    {
+      "name": "replaced_a1_sees_fact_committed_by_b0",
+      "result": "PASS",
+      "summary": "F-A #3 在 A1=200 B0=200 且指纹一致"
+    },
+    {
+      "name": "a1_write_visible_to_unrestarted_b0",
+      "result": "PASS",
+      "summary": "F-A2 #5 A1 提交，A1=200/B0 旧进程=200 指纹一致"
+    },
+    {
+      "name": "fence_b_created",
+      "result": "PASS",
+      "summary": "rc=0"
+    },
+    {
+      "name": "partner_a1_takes_work_while_b_down",
+      "result": "PASS",
+      "summary": "发布=201 领取条数=1"
+    },
+    {
+      "name": "replaced_b1_sees_fact_committed_by_a1",
+      "result": "PASS",
+      "summary": "F-B #6 B1 读取=200"
+    },
+    {
+      "name": "b1_write_visible_to_a1",
+      "result": "PASS",
+      "summary": "F-B2 #8 B1 提交，A1 读取=200"
+    },
+    {
+      "name": "both_ports_now_candidate_release",
+      "result": "PASS",
+      "summary": "A1=candidate-r053 B1=candidate-r053"
+    },
+    {
+      "name": "original_lease_naturally_expired_still_open",
+      "result": "PASS",
+      "summary": "超过截止 0.8s 且回收前 outcome 仍为 open（未做任何处置）"
+    },
+    {
+      "name": "peer_reads_same_open_past_deadline",
+      "result": "PASS",
+      "summary": "对端 HTTP 只读也看到同一行 open 尝试"
+    },
+    {
+      "name": "peer_sweep_reclaims_attempt1",
+      "result": "PASS",
+      "summary": "[{\"attempt\": 1, \"delivery_id\": 1, \"effective_at\": 1795740701.5172253, \"outcome\": \"expired\", \"reason\": \"租约超时\", \"state\": \"waiting\"}]"
+    },
+    {
+      "name": "race2_exactly_one_replacement_lease",
+      "result": "PASS",
+      "summary": "winners=1 attempt=#2"
+    },
+    {
+      "name": "race2_new_token_differs",
+      "result": "PASS",
+      "summary": "第二次尝试使用全新凭据，旧凭据随尝试关闭失效"
+    },
+    {
+      "name": "race2_successor_still_blocked",
+      "result": "PASS",
+      "summary": "同键后继 D2 在新队首未处置前仍不可领取"
+    },
+    {
+      "name": "race2_single_open_attempt_in_db",
+      "result": "PASS",
+      "summary": "共库任何时刻只有一行 open 尝试（one_open_attempt 部分唯一索引）"
+    },
+    {
+      "name": "shared_db_state_advanced",
+      "result": "PASS",
+      "summary": "共库尝试序列 = #1 expired -> #2 open，journal 连续推进"
+    },
+    {
+      "name": "a1_b1_views_identical",
+      "result": "PASS",
+      "summary": "两个滚动节点对推进后状态的 HTTP 视图完全一致"
+    },
+    {
+      "name": "decoy_frozen_pre_reclaim_snapshot",
+      "result": "PASS",
+      "summary": "旧副本仍只有 #1/open（截止时间同样已过），没有 expired 记录与 #2"
+    },
+    {
+      "name": "post_fork_fact_404_on_decoy",
+      "result": "PASS",
+      "summary": "栅栏事实 F-A #3 在误连端为 404，共库两端为 200"
+    },
+    {
+      "name": "controlled_split_brain_tokens_differ",
+      "result": "PASS",
+      "summary": "旧副本自行回收后发出与共库不同的 #2 凭据——这正是护栏阻止的重复租约脑裂"
+    },
+    {
+      "name": "stale_copy_retained_on_disk",
+      "result": "PASS",
+      "summary": "旧库保留在 /workspace/.rollout-lab/stale-copy/quaybell.sqlite3"
+    }
+  ],
+  "ports": {
+    "A": 18091,
+    "B": 18092,
+    "C_decoy": 18093,
+    "note": "首选端口被占用时验收器自动换空闲端口"
+  },
+  "paths": {
+    "lab": "/workspace/.rollout-lab",
+    "common_db": "/workspace/.rollout-lab/common/quaybell.sqlite3",
+    "stale_db": "/workspace/.rollout-lab/stale-copy/quaybell.sqlite3",
+    "restored_db": "/workspace/.rollout-lab/restored-canonical/quaybell.sqlite3"
+  },
+  "commands": [
+    {
+      "title": "init-cluster 共同库绑定",
+      "command": "/usr/bin/python3 /workspace/ops/qb_rollout.py init-cluster --db /workspace/.rollout-lab/common/quaybell.sqlite3 --cluster quaybell-rolling-acceptance",
+      "rc": 0
+    },
+    {
+      "title": "decoy-copy 共同库 -> 旧副本",
+      "command": "/usr/bin/python3 /workspace/ops/qb_rollout.py decoy-copy --source /workspace/.rollout-lab/common/quaybell.sqlite3 --target /workspace/.rollout-lab/stale-copy/quaybell.sqlite3",
+      "rc": 0
+    },
+    {
+      "title": "fence via B（未重启端刚提交）",
+      "command": "/usr/bin/python3 /workspace/ops/qb_rollout.py fence --db /workspace/.rollout-lab/common/quaybell.sqlite3 --via http://127.0.0.1:18092 --channel rollout-proof --out /workspace/.rollout-lab/specs/fence-a.json --note replace node A",
+      "rc": 0
+    },
+    {
+      "title": "拒绝错误 --db 路径",
+      "command": "/usr/bin/python3 -m quaybell --port 18099 --db /workspace/.rollout-lab/stale-copy/quaybell.sqlite3 --common-db /workspace/.rollout-lab/common/quaybell.sqlite3 --expect-cluster quaybell-rolling-acceptance --require-fence /workspace/.rollout-lab/specs/fence-a.json",
+      "rc": 3
+    },
+    {
+      "title": "拒绝被复制回权威路径的旧副本（新鲜事实缺失）",
+      "command": "/usr/bin/python3 -m quaybell --port 18098 --db /workspace/.rollout-lab/restored-canonical/quaybell.sqlite3 --common-db /workspace/.rollout-lab/restored-canonical/quaybell.sqlite3 --expect-cluster quaybell-rolling-acceptance --require-fence /workspace/.rollout-lab/specs/fence-a.json",
+      "rc": 4
+    }
+  ],
+  "race_one": {
+    "workers": 8,
+    "elapsed_ms": 15,
+    "http_errors": 0,
+    "busy_retries": 0,
+    "total_leased_items": 1,
+    "winners_for_d1": 1,
+    "items_for_d2": 0,
+    "winner": {
+      "port": 18091,
+      "worker": "race-one-4",
+      "delivery_id": 1,
+      "attempt_number": 1,
+      "expires": 1795740701.5172253,
+      "token_prefix": "JxT-PGkjfa",
+      "token_digest": "c9c00033c9bdf6c32b32900283412c90d7011e5f293765cb7b92fd6d84085d6e"
+    },
+    "per_port_leased": {
+      "18091": 1,
+      "18092": 0
+    }
+  },
+  "race_two": {
+    "workers": 8,
+    "elapsed_ms": 20,
+    "http_errors": 0,
+    "busy_retries": 0,
+    "total_leased_items": 1,
+    "winners_for_d1": 1,
+    "items_for_d2": 0,
+    "winner": {
+      "port": 18091,
+      "worker": "race-two-4",
+      "delivery_id": 1,
+      "attempt_number": 2,
+      "expires": 1795740710.2799418,
+      "token_prefix": "SIHCeSZT7o",
+      "token_digest": "c3963f33636b721634bda3de33f805b184a8d3dda5ec59c5cd1fa626181f9d37"
+    },
+    "per_port_leased": {
+      "18091": 1,
+      "18092": 0
+    }
+  },
+  "freeze": {
+    "common_logical_hash": "fa0f26f04bfa1b7f43956a91d03445d7fac8670baf5039ee41af2190626c5f1d",
+    "stale_logical_hash": "fa0f26f04bfa1b7f43956a91d03445d7fac8670baf5039ee41af2190626c5f1d",
+    "views_equal": true,
+    "common_attempt1": {
+      "id": 1,
+      "delivery_id": 1,
+      "number": 1,
+      "token_digest": "c9c00033c9bdf6c32b32900283412c90d7011e5f293765cb7b92fd6d84085d6e",
+      "worker": "race-one-4",
+      "started": 1795740693.5172253,
+      "expires": 1795740701.5172253,
+      "outcome": "open",
+      "finished": null,
+      "reason": null
+    },
+    "copied_before_lease_expiry": true
+  },
+  "rolling": [
+    {
+      "replaced": "A",
+      "fact_id": 3,
+      "new_release": "candidate-r053"
+    },
+    {
+      "replaced": "B",
+      "fact_id": 6,
+      "new_release": "candidate-r053"
+    }
+  ],
+  "expiry": {
+    "holder_port": 18091,
+    "sweep_via_port": 18092,
+    "pre_sweep": {
+      "now": 1795740702.2690613,
+      "expires": 1795740701.5172253,
+      "seconds_past_deadline": 0.75,
+      "outcome": "open"
+    },
+    "sweep_status": 200,
+    "sweep_recovered_d1": [
+      {
+        "attempt": 1,
+        "delivery_id": 1,
+        "effective_at": 1795740701.5172253,
+        "outcome": "expired",
+        "reason": "租约超时",
+        "state": "waiting"
+      }
+    ]
+  },
+  "discrimination": {
+    "common_attempts": [
+      {
+        "number": 1,
+        "outcome": "expired",
+        "worker": "race-one-4",
+        "expires": 1795740701.5172253,
+        "finished": 1795740702.2720425,
+        "reason": "租约超时"
+      },
+      {
+        "number": 2,
+        "outcome": "open",
+        "worker": "race-two-4",
+        "expires": 1795740710.2799418,
+        "finished": null,
+        "reason": null
+      }
+    ],
+    "decoy_attempts_before_own_sweep": [
+      {
+        "number": 1,
+        "outcome": "open",
+        "worker": "race-one-4",
+        "expires": 1795740701.5172253
+      }
+    ],
+    "split_brain": {
+      "decoy_sweep_status": 200,
+      "decoy_claim_status": 200,
+      "decoy_attempt_number": 2,
+      "token_digests_differ": true,
+      "common_open_attempt_id": 4
+    }
+  },
+  "guard_rejections": [
+    {
+      "case": "wrong_path",
+      "command": "/usr/bin/python3 -m quaybell --port 18099 --db /workspace/.rollout-lab/stale-copy/quaybell.sqlite3 --common-db /workspace/.rollout-lab/common/quaybell.sqlite3 --expect-cluster quaybell-rolling-acceptance --require-fence /workspace/.rollout-lab/specs/fence-a.json",
+      "rc": 3,
+      "parsed": {
+        "code": "DB_PATH_MISMATCH",
+        "exit_code": 3,
+        "candidate": "/workspace/.rollout-lab/stale-copy/quaybell.sqlite3",
+        "pin": "/workspace/.rollout-lab/common/quaybell.sqlite3",
+        "failures": [
+          {
+            "check": "path_pin",
+            "code": "DB_PATH_MISMATCH",
+            "message": "候选库 /workspace/.rollout-lab/stale-copy/quaybell.sqlite3 不是权威共同库 /workspace/.rollout-lab/common/quaybell.sqlite3；这通常意味着 --db 指向了复制旧库"
+          },
+          {
+            "check": "fence_row",
+            "code": "STALE_REPLICA",
+            "message": "候选库看不到栅栏行 #1；该栅栏产生于复制 fork 之后，说明候选库是落后的旧副本，而不是状态已推进的共库"
+          },
+          {
+            "check": "fence_message",
+            "code": "STALE_REPLICA",
+            "message": "候选库看不到未重启端刚提交的事实：消息 #3 不存在"
+          },
+          {
+            "check": "journal_watermark",
+            "code": "STALE_REPLICA",
+            "message": "候选库 journal 水位 8 低于栅栏水位 9；共库已推进而候选库停在旧快照"
+          }
+        ]
+      },
+      "stderr": "QB_GUARD_REJECT {\"code\": \"DB_PATH_MISMATCH\", \"exit_code\": 3, \"candidate\": \"/workspace/.rollout-lab/stale-copy/quaybell.sqlite3\", \"pin\": \"/workspace/.rollout-lab/common/quaybell.sqlite3\", \"failures\": [{\"check\": \"path_pin\", \"code\": \"DB_PATH_MISMATCH\", \"message\": \"候选库 /workspace/.rollout-lab/stale-copy/quaybell.sqlite3 不是权威共同库 /workspace/.rollout-lab/common/quaybell.sqlite3；这通常意味着 --db 指向了复制旧库\"}, {\"check\": \"fence_row\", \"code\": \"STALE_REPLICA\", \"message\": \"候选库看不到栅栏行 #1；该栅栏产生于复制 fork 之后，说明候选库是落后的旧副本，而不是状态已推进的共库\"}, {\"check\": \"fence_message\", \"code\": \"STALE_REPLICA\", \"message\": \"候选库看不到未重启端刚提交的事实：消息 #3 不存在\"}, {\"check\": \"journal_watermark\", \"code\": \"STALE_REPLICA\", \"message\": \"候选库 journal 水位 8 低于栅栏水位 9；共库已推进而候选库停在旧快照\"}]}\n拒绝启动 Quaybell：[path_pin] 候选库 /workspace/.rollout-lab/stale-copy/quaybell.sqlite3 不是权威共同库 /workspace/.rollout-lab/common/quaybell.sqlite3；这通常意味着 --db 指向了复制旧库\n拒绝启动 Quaybell：[fence_row] 候选库看不到栅栏行 #1；该栅栏产生于复制 fork 之后，说明候选库是落后的旧副本，而不是状态已推进的共库\n拒绝启动 Quaybell：[fence_message] 候选库看不到未重启端刚提交的事实：消息 #3 不存在\n拒绝启动 Quaybell：[journal_watermark] 候选库 journal 水位 8 低于栅栏水位 9；共库已推进而候选库停在旧快照\n"
+    },
+    {
+      "case": "stale_pinned_path",
+      "command": "/usr/bin/python3 -m quaybell --port 18098 --db /workspace/.rollout-lab/restored-canonical/quaybell.sqlite3 --common-db /workspace/.rollout-lab/restored-canonical/quaybell.sqlite3 --expect-cluster quaybell-rolling-acceptance --require-fence /workspace/.rollout-lab/specs/fence-a.json",
+      "rc": 4,
+      "parsed": {
+        "code": "STALE_REPLICA",
+        "exit_code": 4,
+        "candidate": "/workspace/.rollout-lab/restored-canonical/quaybell.sqlite3",
+        "pin": "/workspace/.rollout-lab/restored-canonical/quaybell.sqlite3",
+        "failures": [
+          {
+            "check": "fence_row",
+            "code": "STALE_REPLICA",
+            "message": "候选库看不到栅栏行 #1；该栅栏产生于复制 fork 之后，说明候选库是落后的旧副本，而不是状态已推进的共库"
+          },
+          {
+            "check": "fence_message",
+            "code": "STALE_REPLICA",
+            "message": "候选库看不到未重启端刚提交的事实：消息 #3 不存在"
+          },
+          {
+            "check": "journal_watermark",
+            "code": "STALE_REPLICA",
+            "message": "候选库 journal 水位 8 低于栅栏水位 9；共库已推进而候选库停在旧快照"
+          }
+        ]
+      },
+      "stderr": "QB_GUARD_REJECT {\"code\": \"STALE_REPLICA\", \"exit_code\": 4, \"candidate\": \"/workspace/.rollout-lab/restored-canonical/quaybell.sqlite3\", \"pin\": \"/workspace/.rollout-lab/restored-canonical/quaybell.sqlite3\", \"failures\": [{\"check\": \"fence_row\", \"code\": \"STALE_REPLICA\", \"message\": \"候选库看不到栅栏行 #1；该栅栏产生于复制 fork 之后，说明候选库是落后的旧副本，而不是状态已推进的共库\"}, {\"check\": \"fence_message\", \"code\": \"STALE_REPLICA\", \"message\": \"候选库看不到未重启端刚提交的事实：消息 #3 不存在\"}, {\"check\": \"journal_watermark\", \"code\": \"STALE_REPLICA\", \"message\": \"候选库 journal 水位 8 低于栅栏水位 9；共库已推进而候选库停在旧快照\"}]}\n拒绝启动 Quaybell：[fence_row] 候选库看不到栅栏行 #1；该栅栏产生于复制 fork 之后，说明候选库是落后的旧副本，而不是状态已推进的共库\n拒绝启动 Quaybell：[fence_message] 候选库看不到未重启端刚提交的事实：消息 #3 不存在\n拒绝启动 Quaybell：[journal_watermark] 候选库 journal 水位 8 低于栅栏水位 9；共库已推进而候选库停在旧快照\n"
+    }
+  ],
+  "guard_verify": [
+    {
+      "case": "common",
+      "rc": 0,
+      "stdout_tail": "{\n  \"ok\": true,\n  \"code\": \"OK\",\n  \"exit_code\": 0,\n  \"candidate_realpath\": \"/workspace/.rollout-lab/common/quaybell.sqlite3\",\n  \"pin_realpath\": \"/workspace/.rollout-lab/common/quaybell.sqlite3\",\n  \"expected_cluster\": \"quaybell-rolling-acceptance\",\n  \"checks\": {\n    \"db_file\": \"pass\",\n    \"path_pin\": \"pass\",\n    \"binding\": \"pass\",\n    \"cluster\": \"pass\",\n    \"fence_row\": \"pass\",\n    \"fence_message\": \"pass\",\n    \"journal_watermark\": \"pass\"\n  },\n  \"observed\": {\n    \"binding_cluster\": \"quaybell-rolling-acceptance\",\n    \"canonical_realpath\": \"/workspace/.rollout-lab/common/quaybell.sqlite3\",\n    \"journal_max\": 9,\n    \"core_schema\": true,\n    \"fence_message_id\": 3,\n    \"fence_fingerprint_prefix\": \"410165724571\"\n  },\n  \"failures\": []\n}\n"
+    },
+    {
+      "case": "stale",
+      "rc": 3,
+      "report": {
+        "ok": false,
+        "code": "DB_PATH_MISMATCH",
+        "exit_code": 3,
+        "candidate_realpath": "/workspace/.rollout-lab/stale-copy/quaybell.sqlite3",
+        "pin_realpath": "/workspace/.rollout-lab/common/quaybell.sqlite3",
+        "expected_cluster": "quaybell-rolling-acceptance",
+        "checks": {
+          "db_file": "pass",
+          "path_pin": "fail",
+          "binding": "pass",
+          "cluster": "pass",
+          "fence_row": "fail",
+          "fence_message": "fail",
+          "journal_watermark": "fail"
+        },
+        "observed": {
+          "binding_cluster": "quaybell-rolling-acceptance",
+          "canonical_realpath": "/workspace/.rollout-lab/common/quaybell.sqlite3",
+          "journal_max": 8,
+          "core_schema": true
+        },
+        "failures": [
+          {
+            "check": "path_pin",
+            "code": "DB_PATH_MISMATCH",
+            "message": "候选库 /workspace/.rollout-lab/stale-copy/quaybell.sqlite3 不是权威共同库 /workspace/.rollout-lab/common/quaybell.sqlite3；这通常意味着 --db 指向了复制旧库"
+          },
+          {
+            "check": "fence_row",
+            "code": "STALE_REPLICA",
+            "message": "候选库看不到栅栏行 #1；该栅栏产生于复制 fork 之后，说明候选库是落后的旧副本，而不是状态已推进的共库"
+          },
+          {
+            "check": "fence_message",
+            "code": "STALE_REPLICA",
+            "message": "候选库看不到未重启端刚提交的事实：消息 #3 不存在"
+          },
+          {
+            "check": "journal_watermark",
+            "code": "STALE_REPLICA",
+            "message": "候选库 journal 水位 8 低于栅栏水位 9；共库已推进而候选库停在旧快照"
+          }
+        ]
+      }
+    }
+  ],
+  "continuity": [
+    {
+      "during": "A_down",
+      "publish_status": 201,
+      "claim_status": 200,
+      "leased": 1
+    },
+    {
+      "during": "B_down",
+      "publish_status": 201,
+      "claim_status": 200,
+      "leased": 1
+    }
+  ],
+  "artifacts": {
+    "common_db_sha256_file": "1fc8686ba24188f23ed795f75b687a8cf4c1918b7af1059318d024e94cacc0f1",
+    "stale_db_sha256_file": "712a7f60e45b6ba2b86287b69d07188aacfd0e1c83d88f1b0b0b35d072834022",
+    "common_logical_hash_final": "8ab07ed754926e04fd1157ab5d831446878adaf099bcc04c00c0d9617b5b5622",
+    "stale_logical_hash_final": "8dd079b49d94468ac836eb2144049ef4e8466c6d088768ee4110a53d3147b6e5",
+    "stale_copy_retained_at": "/workspace/.rollout-lab/stale-copy/quaybell.sqlite3",
+    "logs": {
+      "A": "/workspace/.rollout-lab/logs/A1-new-p18091.log",
+      "B": "/workspace/.rollout-lab/logs/B1-new-p18092.log",
+      "C": "/workspace/.rollout-lab/logs/C-decoy-p18093.log"
+    },
+    "spec_a": "/workspace/.rollout-lab/specs/fence-a.json",
+    "spec_b": "/workspace/.rollout-lab/specs/fence-b.json",
+    "pristine_fork_copy": "/workspace/acceptance/evidence/pristine-fork-copy.sqlite3",
+    "brain_split_copy": "/workspace/acceptance/evidence/stale-copy-brain-split.sqlite3"
+  },
+  "processes_stopped": true
+}

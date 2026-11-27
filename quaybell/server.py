@@ -1,4 +1,5 @@
 import logging
+import os
 import sqlite3
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from time import time
@@ -51,6 +52,7 @@ class RelayRequest(BaseHTTPRequestHandler):
             self.send_header('Content-Length', str(len(body)))
             self.send_header('Cache-Control', 'no-persistence')
             self.send_header('X-Content-Type-Options', 'nosniff')
+            self.send_header('X-Quaybell-Release', os.environ.get('QUAYBELL_RELEASE', 'unversioned'))
             self.send_header('Content-Security-Policy', "default-src 'self'; frame-ancestors 'none'")
             if reply.filename:
                 self.send_header('Content-Disposition', f'attachment; filename="{reply.filename}"')

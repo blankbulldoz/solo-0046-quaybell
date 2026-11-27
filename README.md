@@ -45,6 +45,32 @@ python3 -m quaybell --demo
 {"producer":"sensor-gate","key":"pulse-next","lane":"coil-north","tags":{"feed":"telemetry"},"payload":{"reading":48,"unit":"mV"}}
 ```
 
+## 滚动升级与防误连上线
+
+两个本机端口共用一份 SQLite 共同库、一次只替换一个进程的上线/验收流程见
+[`docs/ROLLING-UPGRADE.md`](docs/ROLLING-UPGRADE.md)，最近一次真实运行的验收记录在
+[`ACCEPTANCE.md`](ACCEPTANCE.md)（机器可读：[`acceptance/rolling-acceptance.json`](acceptance/rolling-acceptance.json)）。一键复跑：
+
+```sh
+python3 ops/rolling_acceptance.py
+```
+
+上线命令带路径钉、集群绑定和“伙伴端刚提交事实”的新鲜栅栏；指向复制旧库时会以
+`QB_GUARD_REJECT` 和退出码 `2/3/4/5/6` 拒绝启动，而不是在旧副本上对外服务：
+
+```sh
+python3 ops/qb_rollout.py init-cluster --db .quaybell/common.sqlite3 --cluster prod-a
+# 前提：伙伴端已在 8092 服务，并已 POST /v1/channels 建立 rollout-proof
+python3 ops/qb_rollout.py fence --db .quaybell/common.sqlite3 \
+  --via http://127.0.0.1:8092 --channel rollout-proof --out fence-8091.json
+PORT=8091 DB=.quaybell/common.sqlite3 COMMON_DB=.quaybell/common.sqlite3 \
+CLUSTER=prod-a FENCE=fence-8091.json RELEASE=candidate ops/go-live.sh
+```
+
+验收包含跨两端口并发抢同一顺序键（只允许一个 open 租约）、原租约真实自然过期后由另一端
+回收、以及故意保留的旧库如何与“共库已推进”状态相鉴别的完整实录。验收不暂停、不确认、
+不拒绝、不清理任何业务消息。
+
 ## 构建与生产工作流
 
 ```sh

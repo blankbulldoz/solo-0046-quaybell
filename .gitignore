@@ -2,3 +2,6 @@ __pycache__/
 *.py[cod]
 .quaybell/
 .DS_Store
+
+# 滚动验收的可重建运行目录（实物证据另存 acceptance/evidence）
+.rollout-lab/
