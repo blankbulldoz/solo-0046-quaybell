@@ -1,0 +1,21 @@
+{
+ "format": "quaybell-review/1",
+ "files": {
+  "facts.json": {
+   "sha256": "e0dce060de9b001cca19ed9c99a67d31c014bf60851cf2b48a83b471cf5f2152",
+   "digest_of": "file"
+  },
+  "evidence-original.json": {
+   "sha256": "e11e1f6460cbdcd8cd4c829f4eda2ec2f5bd0088f54e76748b265278d6967784",
+   "digest_of": "record"
+  },
+  "evidence-mirror.json": {
+   "sha256": "ad4df201e9c964de069bf5ccf319bac2ce0e9159b4ae2a37e450725de49241b9",
+   "digest_of": "record"
+  },
+  "evidence-new.json": {
+   "sha256": "13e7cfd9feb554603eb254098280d3e80a1f615ab65fd7c89d68c4d8705645c8",
+   "digest_of": "record"
+  }
+ }
+}

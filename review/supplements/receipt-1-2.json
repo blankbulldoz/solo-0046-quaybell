@@ -1,0 +1,8 @@
+{
+ "format": "quaybell-redrive-receipt/1",
+ "kind": "redrive-receipt",
+ "received_via": "事后补交（转交时已与原始工单分离）",
+ "scope_note": "转交件只保留父子分发号，不含频道、时间、处置结果或凭据。",
+ "parent_delivery": 1,
+ "child_delivery": 2
+}

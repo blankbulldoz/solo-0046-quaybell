@@ -1,0 +1,37 @@
+{
+ "format": "quaybell-supplement/1",
+ "kind": "peer-trace",
+ "received_via": "另一值守点转交的补充材料",
+ "scope_note": "时间与本告警接近，但来自另一条频道链路；用于检验账本会不会把两条链路合并。",
+ "identity": {
+  "channel": "alert-mirror",
+  "message_id": 3,
+  "delivery_id": 4,
+  "producer": "sensor-gate",
+  "key": "alert-7",
+  "lane": "coil-north",
+  "tags": {"stream": "alert"},
+  "payload": {"reading": 48, "unit": "mV"},
+  "fingerprint": "2ae93fb1e1fdd29f0437a0ff0429946509fa7628b1a829819829943c80274115"
+ },
+ "observed": {
+  "published": 1795756325.0,
+  "claimed": 1795756685.0,
+  "disposed": 1795756860.0,
+  "disposition": "acked"
+ },
+ "citations": [
+  {"file": "review/evidence/run-001/evidence-mirror.json", "path": "observed_at", "expect": 1795756890.0},
+  {"file": "review/evidence/run-001/evidence-mirror.json", "path": "trace.message.channel", "expect": "alert-mirror"},
+  {"file": "review/evidence/run-001/evidence-mirror.json", "path": "trace.message.id", "expect": 3},
+  {"file": "review/evidence/run-001/evidence-mirror.json", "path": "trace.message.published", "expect": 1795756325.0},
+  {"file": "review/evidence/run-001/evidence-mirror.json", "path": "trace.deliveries.0.id", "expect": 4},
+  {"file": "review/evidence/run-001/evidence-mirror.json", "path": "trace.deliveries.0.parent_id", "expect": null},
+  {"file": "review/evidence/run-001/evidence-mirror.json", "path": "trace.deliveries.0.state", "expect": "acked"},
+  {"file": "review/evidence/run-001/evidence-mirror.json", "path": "trace.deliveries.0.attempts.0.started", "expect": 1795756685.0},
+  {"file": "review/evidence/run-001/evidence-mirror.json", "path": "trace.deliveries.0.attempts.0.finished", "expect": 1795756860.0},
+  {"file": "review/evidence/run-001/evidence-mirror.json", "path": "trace.deliveries.0.attempts.0.outcome", "expect": "acked"},
+  {"file": "review/evidence/run-001/facts.json", "path": "mirror_publish.fanout.primary-desk", "expect": 4},
+  {"file": "review/evidence/run-001/facts.json", "path": "mirror_ack.effective_at", "expect": 1795756860.0}
+ ]
+}

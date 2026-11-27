@@ -1,0 +1,479 @@
+{
+ "format": "quaybell-review-ledger/1",
+ "revision": 3,
+ "updated_at": "2026-11-27T18:22:06Z",
+ "updated_by": "baseline（样本观测截止；此后的变更时间为实际写入时间）",
+ "title": "告警清理后原键复用 · 交接账本",
+ "scope": "本账本用本机同构样本 review/evidence/run-001 标注每条手记能确认到哪一步。样本只证明机制上讲得通，不是生产事实；任何生产结论都要由值班人按引用核到生产侧的编号与时间。",
+ "sample": {
+  "run": "run-001",
+  "command": "python3 -m review.scenario --out review/evidence/run-001",
+  "manifest": "review/evidence/run-001/MANIFEST.json",
+  "observed_through": "2026-11-27T05:27:00Z",
+  "deterministic": "受控时钟从 2026-11-27T00:00:00Z 起算；同一版代码重复运行产出逐字节相同的材料。租约凭据每次随机且从不写入材料。"
+ },
+ "step_ladder": [
+  {
+   "id": "S0",
+   "name": "仅手记",
+   "meaning": "只有叙述，没有本机材料，也没有可复现路径。"
+  },
+  {
+   "id": "S1",
+   "name": "同构可复现",
+   "meaning": "本机同构样本能跑出这一步；说明机制上讲得通，不指向生产。"
+  },
+  {
+   "id": "S2",
+   "name": "材料可核对",
+   "meaning": "至少一条本机保留材料按字段对上，且摘要校验通过。"
+  },
+  {
+   "id": "S3",
+   "name": "双源交叉",
+   "meaning": "两条相互独立的材料（如迟来回执与保留证据）在关键字段上一致。"
+  }
+ ],
+ "claims": [
+  {
+   "id": "C1",
+   "note": "05:12 已补发",
+   "subject": "new-message",
+   "assertion": "同构样本中 05:12:00 生产方以原生产键 alert-7 重新发布，得到新消息 #2（repeated=false），并向 primary-desk 生成分发 3。",
+   "step": "S2",
+   "verdict": "收窄",
+   "disposition": "采用（收窄）",
+   "qualifier": "「补发」在本样本里是新的消息身份，不是幂等重放；不能用它证明生产侧是重放还是新发。",
+   "asserts_handled_of_new_message": false,
+   "citations": [
+    {
+     "file": "review/evidence/run-001/facts.json",
+     "path": "new_publish.message_id",
+     "expect": 2
+    },
+    {
+     "file": "review/evidence/run-001/facts.json",
+     "path": "new_publish.repeated",
+     "expect": false
+    },
+    {
+     "file": "review/evidence/run-001/facts.json",
+     "path": "new_publish.fanout.primary-desk",
+     "expect": 3
+    },
+    {
+     "file": "review/evidence/run-001/evidence-new.json",
+     "path": "trace.message.id",
+     "expect": 2
+    },
+    {
+     "file": "review/evidence/run-001/evidence-new.json",
+     "path": "trace.message.published",
+     "expect": 1795756320.0
+    },
+    {
+     "file": "review/evidence/run-001/evidence-new.json",
+     "path": "trace.deliveries.0.id",
+     "expect": 3
+    },
+    {
+     "file": "review/evidence/run-001/evidence-new.json",
+     "path": "trace.deliveries.0.parent_id",
+     "expect": null
+    }
+   ],
+   "open": [
+    "生产方是否把「补发」理解为同一批次重放，需要生产侧书面确认；账本不替它猜。"
+   ]
+  },
+  {
+   "id": "C2",
+   "note": "05:18 再次收到",
+   "subject": "new-message",
+   "assertion": "05:18:00 desk-a 领取新消息的分发 3，租约 300 秒至 05:23:00；05:22:00 导出的证据显示该尝试仍为 open，投递状态 leased。",
+   "step": "S2",
+   "verdict": "收窄",
+   "disposition": "采用（收窄）",
+   "qualifier": "「收到」只到「已领取、持有租约」；本账本不把它当作处理完成。",
+   "asserts_handled_of_new_message": false,
+   "citations": [
+    {
+     "file": "review/evidence/run-001/facts.json",
+     "path": "new_claim.delivery_id",
+     "expect": 3
+    },
+    {
+     "file": "review/evidence/run-001/facts.json",
+     "path": "new_claim.worker",
+     "expect": "desk-a"
+    },
+    {
+     "file": "review/evidence/run-001/facts.json",
+     "path": "new_claim.expires",
+     "expect": 1795756980.0
+    },
+    {
+     "file": "review/evidence/run-001/evidence-new.json",
+     "path": "observed_at",
+     "expect": 1795756920.0
+    },
+    {
+     "file": "review/evidence/run-001/evidence-new.json",
+     "path": "trace.deliveries.0.state",
+     "expect": "leased"
+    },
+    {
+     "file": "review/evidence/run-001/evidence-new.json",
+     "path": "trace.deliveries.0.attempts.0.started",
+     "expect": 1795756680.0
+    },
+    {
+     "file": "review/evidence/run-001/evidence-new.json",
+     "path": "trace.deliveries.0.attempts.0.outcome",
+     "expect": "open"
+    }
+   ],
+   "open": []
+  },
+  {
+   "id": "C3",
+   "note": "05:21 已处理",
+   "subject": "new-message",
+   "assertion": "与材料相反：新消息分发 3 在 05:21 前后没有确认记录；租约 05:23:00 到期，05:23:30 的全局回收把它记为 expired 并转入死信。样本里 05:21:00 的确认属于另一条链路的分发 4。",
+   "step": "S2",
+   "verdict": "与材料相反",
+   "disposition": "不得改写",
+   "qualifier": "这条手记只能停留在手记；不得把新消息那一行标成已处理。",
+   "asserts_handled_of_new_message": true,
+   "citations": [
+    {
+     "file": "review/evidence/run-001/evidence-new.json",
+     "path": "trace.deliveries.0.attempts.0.outcome",
+     "expect": "open"
+    },
+    {
+     "file": "review/evidence/run-001/evidence-new.json",
+     "path": "trace.deliveries.0.attempts.0.finished",
+     "expect": null
+    },
+    {
+     "file": "review/evidence/run-001/facts.json",
+     "path": "sweep.recovered.0.delivery_id",
+     "expect": 3
+    },
+    {
+     "file": "review/evidence/run-001/facts.json",
+     "path": "sweep.recovered.0.outcome",
+     "expect": "expired"
+    },
+    {
+     "file": "review/evidence/run-001/facts.json",
+     "path": "sweep.recovered.0.effective_at",
+     "expect": 1795757010.0
+    },
+    {
+     "file": "review/evidence/run-001/facts.json",
+     "path": "mirror_ack.delivery_id",
+     "expect": 4
+    },
+    {
+     "file": "review/evidence/run-001/facts.json",
+     "path": "mirror_ack.effective_at",
+     "expect": 1795756860.0
+    }
+   ],
+   "open": [
+    "若生产侧确有 05:21 的处理动作，须给出消息号或分发号；只有「已处理」三字挂不到新消息上。"
+   ]
+  },
+  {
+   "id": "C4",
+   "note": "迟来的重投回执（父子分发号）",
+   "subject": "old-chain",
+   "assertion": "回执中的父子分发号与本机保留材料对上：旧消息 #1 的分发 1 被明确拒绝后，重投追加直接后继分发 2，分发 2 已在 05:00:06 确认。",
+   "step": "S3",
+   "verdict": "一致（仅旧链）",
+   "disposition": "采用（限旧链）",
+   "qualifier": "回执与保留证据两条独立材料在 1→2 与其后继已确认上一致；这只证明旧链有后继，不能把新消息那一行改成已处理。",
+   "asserts_handled_of_new_message": false,
+   "citations": [
+    {
+     "file": "review/evidence/run-001/facts.json",
+     "path": "original_redrive.source_id",
+     "expect": 1
+    },
+    {
+     "file": "review/evidence/run-001/facts.json",
+     "path": "original_redrive.delivery_id",
+     "expect": 2
+    },
+    {
+     "file": "review/evidence/run-001/evidence-original.json",
+     "path": "trace.deliveries.1.parent_id",
+     "expect": 1
+    },
+    {
+     "file": "review/evidence/run-001/evidence-original.json",
+     "path": "trace.deliveries.1.state",
+     "expect": "acked"
+    },
+    {
+     "file": "review/evidence/run-001/evidence-original.json",
+     "path": "trace.message.id",
+     "expect": 1
+    },
+    {
+     "file": "review/supplements/receipt-1-2.json",
+     "path": "parent_delivery",
+     "expect": 1
+    },
+    {
+     "file": "review/supplements/receipt-1-2.json",
+     "path": "child_delivery",
+     "expect": 2
+    }
+   ],
+   "open": [],
+   "material_refs": [
+    "receipt-1-2"
+   ]
+  },
+  {
+   "id": "C5",
+   "note": "保留下来的新消息证据",
+   "subject": "artifact",
+   "assertion": "05:22:00 导出的 quaybell-trace/1，摘要与记录内容自洽；其中 message #2、delivery #3、尝试 open。",
+   "step": "S2",
+   "verdict": "一致",
+   "disposition": "采用",
+   "qualifier": "证据冻结的是 05:22:00 的读取快照，不覆盖之后发生的事。",
+   "asserts_handled_of_new_message": false,
+   "citations": [
+    {
+     "file": "review/evidence/run-001/evidence-new.json",
+     "path": "format",
+     "expect": "quaybell-trace/1"
+    },
+    {
+     "file": "review/evidence/run-001/evidence-new.json",
+     "path": "sha256",
+     "expect": "13e7cfd9feb554603eb254098280d3e80a1f615ab65fd7c89d68c4d8705645c8"
+    },
+    {
+     "file": "review/evidence/run-001/evidence-new.json",
+     "path": "trace.message.id",
+     "expect": 2
+    },
+    {
+     "file": "review/evidence/run-001/evidence-new.json",
+     "path": "trace.deliveries.0.id",
+     "expect": 3
+    },
+    {
+     "file": "review/evidence/run-001/evidence-new.json",
+     "path": "trace.deliveries.0.attempts.0.outcome",
+     "expect": "open"
+    }
+   ],
+   "open": []
+  },
+  {
+   "id": "C6",
+   "note": "补充材料：时间接近但链路不同",
+   "subject": "peer-chain",
+   "assertion": "本机可核对：补充材料自带 identity 指向 alert-mirror 的消息 #3 / 分发 4，该分发在 05:21:00 被确认；它与告警本体 alert-desk 的消息 #2 / 分发 3 信封逐字段相同，但链路身份不同。",
+   "step": "S2",
+   "verdict": "字段一致，链路未合并",
+   "disposition": "仅登记，不并账",
+   "qualifier": "共 6 个身份字段（producer、key、lane、tags、payload、fingerprint）一致；但 channel=alert-mirror、message_id=3、delivery_id=4、parent_id=null，且发布于 05:12:05（新消息发布后 5 秒）。字段同构可以解释成镜像转发，也可能只是另一处按同一模板重发；证据本身分不开这两种解释。",
+   "asserts_handled_of_new_message": false,
+   "citations": [
+    {
+     "file": "review/evidence/run-001/evidence-mirror.json",
+     "path": "observed_at",
+     "expect": 1795756890.0
+    },
+    {
+     "file": "review/evidence/run-001/evidence-mirror.json",
+     "path": "trace.message.channel",
+     "expect": "alert-mirror"
+    },
+    {
+     "file": "review/evidence/run-001/evidence-mirror.json",
+     "path": "trace.message.id",
+     "expect": 3
+    },
+    {
+     "file": "review/evidence/run-001/evidence-mirror.json",
+     "path": "trace.message.published",
+     "expect": 1795756325.0
+    },
+    {
+     "file": "review/evidence/run-001/evidence-mirror.json",
+     "path": "trace.deliveries.0.id",
+     "expect": 4
+    },
+    {
+     "file": "review/evidence/run-001/evidence-mirror.json",
+     "path": "trace.deliveries.0.parent_id",
+     "expect": null
+    },
+    {
+     "file": "review/evidence/run-001/evidence-mirror.json",
+     "path": "trace.deliveries.0.state",
+     "expect": "acked"
+    },
+    {
+     "file": "review/evidence/run-001/evidence-mirror.json",
+     "path": "trace.deliveries.0.attempts.0.started",
+     "expect": 1795756685.0
+    },
+    {
+     "file": "review/evidence/run-001/evidence-mirror.json",
+     "path": "trace.deliveries.0.attempts.0.finished",
+     "expect": 1795756860.0
+    },
+    {
+     "file": "review/evidence/run-001/evidence-mirror.json",
+     "path": "trace.deliveries.0.attempts.0.outcome",
+     "expect": "acked"
+    },
+    {
+     "file": "review/evidence/run-001/facts.json",
+     "path": "mirror_publish.fanout.primary-desk",
+     "expect": 4
+    },
+    {
+     "file": "review/evidence/run-001/facts.json",
+     "path": "mirror_ack.effective_at",
+     "expect": 1795756860.0
+    },
+    {
+     "file": "review/evidence/run-001/evidence-new.json",
+     "path": "trace.message.channel",
+     "expect": "alert-desk"
+    },
+    {
+     "file": "review/evidence/run-001/evidence-new.json",
+     "path": "trace.message.id",
+     "expect": 2
+    },
+    {
+     "file": "review/evidence/run-001/facts.json",
+     "path": "new_publish.message_id",
+     "expect": 2
+    },
+    {
+     "file": "review/evidence/run-001/facts.json",
+     "path": "mirror_publish.message_id",
+     "expect": 3
+    }
+   ],
+   "open": [
+    "要把两条链路定为人核对后的关联，需要生产侧提供 alert-mirror 的转发规则，人核对后再决定是否在同一次告警下并账；账本不代替这一步。"
+   ],
+   "associations": [
+    {
+     "layer": "字段级",
+     "status": "成立",
+     "basis": "信封与指纹逐字段相同"
+    },
+    {
+     "layer": "链路级",
+     "status": "未成立",
+     "basis": "频道与消息身份不同，分发 4 无父节点"
+    },
+    {
+     "layer": "业务级",
+     "status": "需人核对",
+     "basis": "缺少镜像转发规则或生产侧同批次说明"
+    }
+   ],
+   "material_refs": [
+    "supplement-mirror"
+   ]
+  },
+  {
+   "id": "C7",
+   "note": "库内已无这三条消息",
+   "subject": "artifact",
+   "assertion": "05:24:00 清理移除消息 #2；05:27:00 直接读取消息 1、2、3 均为 404；两个频道的保留候选为空。此后只能依赖保留材料。",
+   "step": "S2",
+   "verdict": "一致",
+   "disposition": "采用",
+   "qualifier": "这不是「已处理」，只是「已不在库中」；清理与处置是两件事。",
+   "asserts_handled_of_new_message": false,
+   "citations": [
+    {
+     "file": "review/evidence/run-001/facts.json",
+     "path": "new_prune.removed.0",
+     "expect": 2
+    },
+    {
+     "file": "review/evidence/run-001/facts.json",
+     "path": "final_reads.1",
+     "expect": 404
+    },
+    {
+     "file": "review/evidence/run-001/facts.json",
+     "path": "final_reads.2",
+     "expect": 404
+    },
+    {
+     "file": "review/evidence/run-001/facts.json",
+     "path": "final_reads.3",
+     "expect": 404
+    },
+    {
+     "file": "review/evidence/run-001/facts.json",
+     "path": "final_retention.alert-desk.eligible",
+     "expect": []
+    },
+    {
+     "file": "review/evidence/run-001/facts.json",
+     "path": "mirror_prune.removed.0",
+     "expect": 3
+    }
+   ],
+   "open": []
+  }
+ ],
+ "materials": [
+  {
+   "id": "receipt-1-2",
+   "kind": "redrive-receipt",
+   "file": "review/supplements/receipt-1-2.json",
+   "scope": "只含父子分发号；无频道、时间、处置结果或凭据。",
+   "proves": "旧链 1 → 2 存在直接后继，且 2 已确认。",
+   "does_not_prove": "不涉及新消息 #2 / 分发 3 的任何处置。"
+  },
+  {
+   "id": "supplement-mirror",
+   "kind": "peer-trace",
+   "file": "review/supplements/supplement-mirror.json",
+   "scope": "另一频道 alert-mirror 上的同信封消息 #3 / 分发 4。",
+   "proves": "字段级同构：生产者、生产键、顺序键、标签、载荷、指纹全部一致，时间相差 5 秒。",
+   "does_not_prove": "不证明它与告警本体是同一次分发或同一次业务事件；频道不同、消息号不同、父分发为空。"
+  }
+ ],
+ "events": [
+  {
+   "revision": 1,
+   "at": "2026-11-27T05:27:00Z",
+   "kind": "baseline",
+   "summary": "按样本观测截止标注各条手记：C1/C2 收窄采用，C3 不得改写，C4/C6 待导入或待验收。"
+  },
+  {
+   "revision": 2,
+   "at": "2026-11-27T18:22:06Z",
+   "kind": "receipt-imported",
+   "summary": "导入迟来重投回执 1→2：仅抬升旧链为双源交叉，新消息 #2 / 分发 3 的处置不变（仍为未处理）。"
+  },
+  {
+   "revision": 3,
+   "at": "2026-11-27T18:22:06Z",
+   "kind": "supplement-accepted",
+   "summary": "验收补充材料：字段级同构成立，链路级不成立，业务级留给人核对；未并入告警本体。"
+  }
+ ]
+}
