@@ -19,3 +19,5 @@ Quaybell 是面向内部服务集成的持久消息中间件。应用通过 HTTP
 ## 验证边界
 
 `examples.walkthrough` 每次起一个真实 HTTP 实例，通过公共入口展示成功和边界拒绝。当前发布用这些有界生产工作流做验证。独立测试套件延后建设。
+
+第三方不可重复设备动作的接入断点（ACK 回执丢失、租约轮换、请求号查询/盲超时对照、人工 redrive 授权补做）由 `examples.device_handoff` 以同样的有界真实 HTTP 方式示范，接入说明见 `INTEGRATION.md`。

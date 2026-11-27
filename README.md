@@ -45,6 +45,18 @@ python3 -m quaybell --demo
 {"producer":"sensor-gate","key":"pulse-next","lane":"coil-north","tags":{"feed":"telemetry"},"payload":{"reading":48,"unit":"mV"}}
 ```
 
+## 第三方接入：不可重复设备动作
+
+如果消费到的消息会触发一次不可重复的设备动作（合闸、开锁、出料等），请先阅读 [`INTEGRATION.md`](INTEGRATION.md)（第三方接入指南）。指南围绕“设备已执行、消费者在拿到 ACK 回执前退出”这一断点，给出持久台账、请求号设计和决定表：什么时候用原 token 安全重发 ACK，什么时候凭请求号查询结果补做，什么时候必须停止自动重试并交人工核对，以及人工 `redrive` 为什么才代表“授权补做”。
+
+可反复本机重跑的配套示范（真实 HTTP 实例 + 受控时钟 + 断言）：
+
+```sh
+python3 -m examples.device_handoff
+```
+
+它分别演示请求号可查询的下游与“超时后只知道连接断了”的盲下游，并明确区分中继 ACK 与设备执行事实：**ACK 只证明中继记录了处置，不是设备已经执行的证明。**
+
 ## 构建与生产工作流
 
 ```sh
@@ -52,6 +64,7 @@ python3 -m compileall -q quaybell examples
 python3 -m examples.walkthrough claim
 python3 -m examples.walkthrough retention
 python3 -m examples.walkthrough export
+python3 -m examples.device_handoff
 ```
 
 每个工作流示例使用临时 SQLite 文件、受控时钟和本机随机端口，运行完即释放。可用 `python3 -m examples.walkthrough --help` 列出所有工作流。正式测试套件延后建设。
