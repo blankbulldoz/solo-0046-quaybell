@@ -120,6 +120,11 @@
       "id": "api_writes",
       "path": "quaybell/api_writes.py",
       "responsibility": "JSON 处置调度"
+    },
+    {
+      "id": "roster",
+      "path": "quaybell/roster.py",
+      "responsibility": "只读重投排程、并行项与偏差换项"
     }
   ],
   "workflows": [
@@ -421,6 +426,27 @@
         "evidence",
         "inspection",
         "codec"
+      ]
+    },
+    {
+      "id": "roster",
+      "name": "排出两轮重投清单",
+      "entry": "GET /v1/channels/{channel}/roster",
+      "success": "两轮清单给出并行项、禁区与漏确认时的换项，且两轮内收掉交界告警",
+      "failure": "交界前重投热键死信会把交界热告警压到两条后继之后",
+      "verification": "python3 -m examples.walkthrough roster",
+      "steps": [
+        "通过 GET /v1/channels/{channel}/roster 发起操作",
+        "按每轮至多两个重投、每轮一个热键件排出两轮",
+        "用队列观察与领取、确认、重投回执核对预测与换项"
+      ],
+      "module_ids": [
+        "roster",
+        "redrive",
+        "deadletters",
+        "eligibility",
+        "overview",
+        "delivery"
       ]
     }
   ],

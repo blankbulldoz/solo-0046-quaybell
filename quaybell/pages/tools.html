@@ -41,6 +41,14 @@
     </form>
   </details>
   <details data-needs-channel>
+    <summary>重投排程</summary>
+    <div class="compact">
+      <p class="muted">只读当前队列与死信，给出两轮重投清单、可并行项、会被挡的正常件和第一轮偏差时的第二轮换项。</p>
+      <div class="button-row"><button type="button" id="roster-plan" class="quiet">查看排程</button></div>
+      <pre class="mono roster-output" id="roster-output" aria-live="polite"></pre>
+    </div>
+  </details>
+  <details data-needs-channel>
     <summary>保留复核</summary>
     <div class="compact">
       <p class="muted">清理时会重新检查消息年龄和所有关联投递。</p>

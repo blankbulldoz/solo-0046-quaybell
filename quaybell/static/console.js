@@ -1,6 +1,8 @@
 import {$, TEXT, api, button, clock, node, notice, onForm, parse, rows, run, status} from './relay.js';
 
 const state = {channel: null, group: null, board: null, sequence: 0, retention: null, leases: new Map()};
+const ROSTER_CAUSE = {delayed: '未到就绪时间', leased: '租约中，等确认或超时',
+  expired: '租约已超时，等回收', paused: '消费组暂停'};
 const policyFields = ['lease_seconds', 'retry_seconds', 'max_attempts', 'retention_seconds'];
 const group = () => state.board?.groups.find(item => item.name === state.group);
 const channelPath = () => `/channels/${state.channel}`;
@@ -198,6 +200,53 @@ $('recover').addEventListener('click', () => run(async () => {
   await refresh();
 }, $('recover')));
 $('refresh').addEventListener('click', () => run(refresh, $('refresh')));
+function rosterText(group) {
+  const lines = [`消费组 ${group.group} · 热键 ${group.hot_lane ?? '无（没有顺序键积到两条死信）'}${group.paused ? '（暂停中）' : ''}`];
+  lines.push('两轮期限：' + (group.deadline.meets_two_round_deadline ? '满足' : '不满足')
+    + `，第二轮后仍欠交界告警 ${group.deadline.boundary_alerts_left_after_round2} 条`);
+  for (const record of group.rounds) {
+    lines.push(`第 ${record.round} 轮（${record.basis === 'observed' ? '实况' : '投影'}）`);
+    for (const row of record.redrives) lines.push(`  重投 源投递 #${row.source}（${row.lane}）→ ${row.successor}`);
+    for (const row of record.holds) lines.push(`  押后 源投递 #${row.source}（${row.lane}）：${row.reason}`);
+    for (const row of record.confirm) {
+      lines.push(`  确认 ${row.label}（${row.lane}，${row.assumed ? '假设' : row.projected ? '投影' : '实件'}）`);
+    }
+    for (const row of record.deferred) lines.push(`  顺延 ${row.label}（${row.lane}）：${row.reason}`);
+    for (const row of record.unavailable) {
+      lines.push(`  未就绪 ${row.label}（${row.lane}）：${ROSTER_CAUSE[row.reason] ?? row.reason}`);
+    }
+    for (const row of record.blocked) lines.push(`  被挡 ${row.label}（${row.lane}）：队首 ${row.head}`);
+    for (const entry of record.parallel) lines.push(`  可并行：${entry.lanes.join('、')} 的${entry.kind}`);
+  }
+  for (const hazard of group.hazards) {
+    lines.push(`禁区：${hazard.if}（${hazard.lane}）`);
+    lines.push('  队列会变成：' + hazard.order.map(row => `${row.label}[${row.cause}]`).join(' → '));
+    for (const row of hazard.blocked_normal) lines.push(`  被挡的正常件：${row.label}`);
+    lines.push(`  后果：${hazard.effect}`);
+  }
+  for (const outcome of group.contingency) {
+    lines.push(`若第 1 轮漏确认 ${outcome.missed.label}（${outcome.missed.lane}）：${outcome.deadline}`);
+    for (const row of outcome.drop) {
+      const name = row.label || `源投递 #${row.source}`;
+      lines.push(`  第二轮换掉：${row.kind === 'redrive' ? '重投' : '确认'} ${name}（${row.lane}）`);
+    }
+    for (const row of outcome.add) {
+      const name = row.label || `源投递 #${row.source}`;
+      lines.push(`  第二轮补上：${row.kind === 'redrive' ? '重投' : '确认'} ${name}（${row.lane}）`);
+    }
+    for (const row of outcome.alarms_at_risk) lines.push(`  受影响的正常件：${row.label}（${row.lane}，${row.cause}）`);
+    lines.push(`  处置：${outcome.recovery}`);
+  }
+  return lines.join('\n');
+}
+
+$('roster-plan').addEventListener('click', () => run(async () => {
+  const channel = state.channel;
+  const reply = await api(`${channelPath()}/roster`);
+  if (state.channel !== channel) return;
+  const group = reply.groups.find(item => item.name === state.group) ?? reply.groups[0];
+  $('roster-output').textContent = group ? rosterText(group) : '当前频道没有消费组';
+}, $('roster-plan')));
 $('retention-plan').addEventListener('click', () => run(async () => {
   const channel = state.channel;
   const reply = await api(`${channelPath()}/retention`);

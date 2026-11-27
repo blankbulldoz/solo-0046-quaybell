@@ -4,6 +4,7 @@ import logging
 
 from quaybell.codec import fingerprint, pack
 
+from .roster import roster as roster_flow
 from .session import CHANNEL, GROUP, POLICY, envelope, session
 
 
@@ -209,7 +210,7 @@ def export(client):
 
 FLOWS = dict(channel=channel, revision=revision, group=group, preview=preview, publish=publish,
              inspect=inspect, pause=pause, claim=claim, ack=ack, retry=retry, sweep=sweep, dead=dead,
-             redrive=redrive, board=board, retention=retention, export=export)
+             redrive=redrive, board=board, retention=retention, export=export, roster=roster_flow)
 
 
 def main():

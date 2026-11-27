@@ -36,6 +36,7 @@ python3 -m quaybell --demo
 | `/messages/{id}` | GET | 信封、分发、尝试、消息级处理记录 |
 | `/messages/{id}/evidence` | GET | `quaybell-trace/1` JSON 下载，摘要针对除 `sha256` 之外的规范化内容 |
 | `/channels/{channel}/retention` | GET / POST | 候选复核，或以 `{}` / `limit` 清理实际合格项 |
+| `/channels/{channel}/roster` | GET | 只读重投排程：两轮清单、并行项、禁区与偏差换项 |
 
 默认策略是 `lease_seconds=24`、`retry_seconds=3`、`max_attempts=3`、`retention_seconds=3600`。重发原生产键时复用初始匹配结果，内容变化则返回 409。如果应用侧副作用必须去重，应按消息和消费组身份设计处理键。重投需要按其业务语义明确将后继身份识别为有意重新处理。
 
@@ -52,6 +53,9 @@ python3 -m compileall -q quaybell examples
 python3 -m examples.walkthrough claim
 python3 -m examples.walkthrough retention
 python3 -m examples.walkthrough export
+python3 -m examples.walkthrough roster
 ```
 
-每个工作流示例使用临时 SQLite 文件、受控时钟和本机随机端口，运行完即释放。可用 `python3 -m examples.walkthrough --help` 列出所有工作流。正式测试套件延后建设。
+每个工作流示例使用临时 SQLite 文件、受控时钟和本机随机端口，运行完即释放。可用 `python3 -m examples.walkthrough --help` 列出所有工作流。
+
+`roster` 用本机样本复现值班排程：热键两条死信（其中一条已有等待中的后继）、两个冷键各一条老死信，交界时热键再发布一条正常告警。它按清单走完两轮，用队列观察和领取、确认、重投的原始回执核对；另含冷键漏确认、热键漏确认与交界前重投三个分支，分别验证换项建议、两轮期限和热键告警被压后的实际队列顺序。
