@@ -2,3 +2,4 @@ __pycache__/
 *.py[cod]
 .quaybell/
 .DS_Store
+drills/coldstandby/runtime/
