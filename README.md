@@ -55,3 +55,14 @@ python3 -m examples.walkthrough export
 ```
 
 每个工作流示例使用临时 SQLite 文件、受控时钟和本机随机端口，运行完即释放。可用 `python3 -m examples.walkthrough --help` 列出所有工作流。正式测试套件延后建设。
+
+## 积压现场复原
+
+`examples.triage` 复原两处看板样本相同、领取为空但成因不同的积压现场，并只读取证：一处组仍暂停且目标队头租约过期未回收，一处组已恢复且目标队头已回收、正在退避。副本实验验证解除暂停或等待是否足够。
+
+```sh
+python3 -m examples.triage                    # 重建并打印摘要，任一结论不为真即失败
+python3 -m examples.triage --verify docs/r049 # 与仓库内取证包逐项比对
+```
+
+判断依据、现场读接口顺序和样本局限见 `docs/r049/README.md`。
