@@ -1,0 +1,37 @@
+{
+  "demo_only": true,
+  "identity": {
+    "message_id": 1,
+    "original_delivery_id": 1,
+    "redriven_delivery_id": 2,
+    "relation": "delivery 2.parent_id == 1"
+  },
+  "original_exports_verified_internally": [
+    {
+      "export": 1,
+      "observed_at": 1764000120,
+      "original_self_digest_sha256": "7d920bf0c4aa17c0aa0fa881333c1ca5040f6701c822c020cfec7fe125ce8d30"
+    },
+    {
+      "export": 2,
+      "observed_at": 1764000600,
+      "original_self_digest_sha256": "534fd2777ce0e12dfe85f2baa6f1a9577e542094adf3b6eefb65825ec15ba981"
+    }
+  ],
+  "sanitized_self_digests": [
+    {
+      "export": 1,
+      "sanitized_self_digest_sha256": "32da564200a4642107f39099d2815fd512d44f3ddbb35f2a6390d703a049697c"
+    },
+    {
+      "export": 2,
+      "sanitized_self_digest_sha256": "859bf5c1f7185880bc13550fd3946b4f2676f2590aac5b5d4b0469267997b38c"
+    }
+  ],
+  "statement": "发送方声明：与本包两份脱敏证据对应的两份原始 quaybell-trace/1 证据，在脱敏前均已通过内嵌自摘要（sha256 字段）重算核对；脱敏按固定替换表执行，未改动任何身份标识、时间戳、状态或关联关系。",
+  "verifiability_boundary": [
+    "接收方可独立验证：脱敏件自摘要、清单哈希、清单 Ed25519 签名、跨文件关联。",
+    "接收方无法仅凭本包验证：原始证据的字节内容与内部名称实值（原件不外发）。",
+    "“原始包校验通过”是发送方在本声明中陈述、并以同一私钥签名背书的事实。"
+  ]
+}

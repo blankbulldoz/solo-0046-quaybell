@@ -1,0 +1,56 @@
+{
+  "demo_only": true,
+  "identity_link": {
+    "message_id": 1,
+    "original_delivery_id": 1,
+    "redelivery_relation": "delivery 2 is the redriven successor of 1",
+    "redriven_delivery_id": 2,
+    "same_message_in_both_exports": true
+  },
+  "package": "quaybell-incident-package-demo",
+  "preserved": [
+    "message id and delivery/attempt/event ids (stable across both files)",
+    "parent_id redelivery linkage (delivery D2.parent_id == D1.id)",
+    "all timestamps, states, outcomes, policy versions and attempt counts",
+    "envelope fingerprint (sha256 of the original canonical envelope)",
+    "payload digest in the placeholder, so equality across files is checkable"
+  ],
+  "redaction_date": "2025-11-25",
+  "rules": [
+    {
+      "action": "pseudonym",
+      "field": "trace.message.producer",
+      "replacement": "PRODUCER-REDACTED-01"
+    },
+    {
+      "action": "pseudonym",
+      "field": "trace.message.dedup_key",
+      "replacement": "PROD-KEY-REDACTED-01"
+    },
+    {
+      "action": "pseudonym",
+      "field": "trace.message.lane and *.lane",
+      "replacement": "LANE-REDACTED-01"
+    },
+    {
+      "action": "removed",
+      "field": "*.envelope.payload",
+      "replacement": "placeholder carrying original_sha256 only"
+    },
+    {
+      "action": "pseudonym",
+      "field": "*.worker",
+      "note": "两个内部 worker 的稳定代号；真实名称到代号的映射留存于发送方内部，不在本包内",
+      "replacements": [
+        "WORKER-REDACTED-A",
+        "WORKER-REDACTED-B"
+      ]
+    },
+    {
+      "action": "pseudonym",
+      "field": "channel / group / tag values (including object keys such as fanout)",
+      "note": "内部拓扑名称（含作为对象键的组名）按固定代号一致替换"
+    }
+  ],
+  "schema": "quaybell-trace/1 (sanitized copy)"
+}

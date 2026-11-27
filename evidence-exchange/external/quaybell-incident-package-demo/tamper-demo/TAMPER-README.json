@@ -1,0 +1,12 @@
+{
+  "base_file": "evidence/export-1_observed-t120.trace.json",
+  "demo_only": true,
+  "how_detected": [
+    "文件字节变化 -> 与 SHA256SUMS.manifest 中记录的哈希不一致",
+    "重新核对自摘要 -> 重算的 sha256 与文件内 sha256 字段不一致",
+    "跨文件矛盾 -> 与 export-2 中同一 delivery 的状态/事件链对不上"
+  ],
+  "mutation": "trace.deliveries[0].state: 'dead' -> 'acked'",
+  "note": "本目录文件故意被篡改，且不纳入签名清单，仅用于教学演示，不属于可信证据。",
+  "original_value": "dead"
+}
