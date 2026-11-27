@@ -1,6 +1,4 @@
-from time import time
-
-from . import catalog, claims, disposition, publication, subscriptions
+from . import catalog, claims, clockwork, disposition, publication, subscriptions
 
 CHANNEL = 'signal-weir'
 
@@ -9,7 +7,7 @@ def populate(persistence):
     with persistence.session(write=True) as db:
         if any(row['name'] == CHANNEL for row in catalog.list_all(db)):
             return
-        now = time()
+        now = clockwork.now_ms()
         rule = dict(lease_seconds=90, retry_seconds=20, max_attempts=1, retention_seconds=7200)
         catalog.create(db, {'name': CHANNEL, 'policy': rule}, now)
         subscriptions.create(db, CHANNEL, {'name': 'receipt-rotor'}, now)

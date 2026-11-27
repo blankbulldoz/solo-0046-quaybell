@@ -1,8 +1,10 @@
-VERSION = 1
+VERSION = 2
+
+# 时间列一律为 Unix 整数毫秒；秒级策略字段（lease_seconds 等）保持整数秒不变。
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS channels (
   name TEXT PRIMARY KEY,
-  created REAL NOT NULL
+  created INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS policies (
   channel TEXT NOT NULL REFERENCES channels(name),
@@ -11,7 +13,7 @@ CREATE TABLE IF NOT EXISTS policies (
   retry_seconds INTEGER NOT NULL,
   max_attempts INTEGER NOT NULL,
   retention_seconds INTEGER NOT NULL,
-  created REAL NOT NULL,
+  created INTEGER NOT NULL,
   PRIMARY KEY(channel, version)
 );
 CREATE TABLE IF NOT EXISTS subscriptions (
@@ -20,7 +22,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   name TEXT NOT NULL,
   tags TEXT NOT NULL,
   paused INTEGER NOT NULL DEFAULT 0 CHECK(paused IN (0,1)),
-  created REAL NOT NULL,
+  created INTEGER NOT NULL,
   UNIQUE(channel, name)
 );
 CREATE TABLE IF NOT EXISTS messages (
@@ -32,8 +34,8 @@ CREATE TABLE IF NOT EXISTS messages (
   envelope TEXT NOT NULL,
   fingerprint TEXT NOT NULL,
   policy INTEGER NOT NULL,
-  published REAL NOT NULL,
-  available REAL NOT NULL,
+  published INTEGER NOT NULL,
+  available INTEGER NOT NULL,
   FOREIGN KEY(channel, policy) REFERENCES policies(channel, version),
   UNIQUE(channel, producer, dedup_key)
 );
@@ -44,9 +46,9 @@ CREATE TABLE IF NOT EXISTS deliveries (
   lane TEXT NOT NULL,
   policy INTEGER NOT NULL,
   state TEXT NOT NULL CHECK(state IN ('waiting','leased','acked','dead')),
-  ready_at REAL NOT NULL,
+  ready_at INTEGER NOT NULL,
   attempt_count INTEGER NOT NULL DEFAULT 0,
-  terminal_at REAL,
+  terminal_at INTEGER,
   parent_id INTEGER UNIQUE REFERENCES deliveries(id)
 );
 CREATE TABLE IF NOT EXISTS attempts (
@@ -55,10 +57,10 @@ CREATE TABLE IF NOT EXISTS attempts (
   number INTEGER NOT NULL,
   token_digest TEXT NOT NULL UNIQUE,
   worker TEXT NOT NULL,
-  started REAL NOT NULL,
-  expires REAL NOT NULL,
+  started INTEGER NOT NULL,
+  expires INTEGER NOT NULL,
   outcome TEXT NOT NULL CHECK('open' = outcome OR outcome IN ('acked','nacked','expired')),
-  finished REAL,
+  finished INTEGER,
   reason TEXT,
   receipt TEXT,
   UNIQUE(delivery_id, number)
@@ -67,9 +69,14 @@ CREATE TABLE IF NOT EXISTS journal (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   channel TEXT NOT NULL REFERENCES channels(name),
   message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
-  at REAL NOT NULL,
+  at INTEGER NOT NULL,
   kind TEXT NOT NULL,
   details TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS migration_ledger (
+  step TEXT PRIMARY KEY,
+  finished_at INTEGER NOT NULL,
+  detail TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS delivery_lane ON deliveries(subscription_id,lane,id)
   WHERE state IN ('waiting','leased');

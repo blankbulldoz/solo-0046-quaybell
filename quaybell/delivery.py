@@ -1,3 +1,4 @@
+from . import clockwork
 from .errors import missing
 
 DELIVERY = '''SELECT d.*,m.channel,s.name AS group_name FROM deliveries d
@@ -18,8 +19,8 @@ def get(db, key):
 
 
 def for_message(db, message_id):
-    return [dict(row) for row in db.execute(DELIVERY + ' WHERE d.message_id=? ORDER BY d.id',
-                                            (message_id,))]
+    return [clockwork.delivery(dict(row)) for row in db.execute(
+        DELIVERY + ' WHERE d.message_id=? ORDER BY d.id', (message_id,))]
 
 
 def lease(db, key, number):

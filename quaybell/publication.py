@@ -1,4 +1,4 @@
-from . import catalog, codec, delivery, journal, policy, routing
+from . import catalog, clockwork, codec, delivery, journal, policy, routing
 from .envelope import Envelope
 from .errors import conflict, missing
 
@@ -28,7 +28,7 @@ def publish(db, channel, raw, now):
             raise conflict('同一生产键已用于另一条消息')
         return receipt(db, existing, True)
     active = policy.read(db, channel)
-    ready_at = now + envelope.delay_seconds
+    ready_at = now + envelope.delay_seconds * clockwork.MILLIS_PER_SECOND
     key = db.execute('''INSERT INTO messages(channel,producer,dedup_key,lane,envelope,fingerprint,policy,published,available)
                         VALUES (?,?,?,?,?,?,?,?,?)''',
                      (channel, envelope.producer, envelope.dedup_key, envelope.lane, encoded, digest,

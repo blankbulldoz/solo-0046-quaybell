@@ -1,3 +1,4 @@
+from . import clockwork
 from .delivery import DELIVERY
 
 
@@ -18,14 +19,14 @@ def explain(db, group, now):
                       (group['id'],))
     heads = {}
     for row in rows:
-        d = dict(row)
-        head = heads.setdefault(d['lane'], d['id'])
-        if d['state'] == 'leased':
-            cause = 'expired' if d['expires'] <= now else 'leased'
-        elif head != d['id']:
+        raw = dict(row)
+        head = heads.setdefault(raw['lane'], raw['id'])
+        if raw['state'] == 'leased':
+            cause = 'expired' if raw['expires'] is not None and raw['expires'] <= now else 'leased'
+        elif head != raw['id']:
             cause = 'blocked'
         elif group['paused']:
             cause = 'paused'
         else:
-            cause = 'delayed' if d['ready_at'] > now else 'ready'
-        yield d | {'cause': cause, 'head_id': head}
+            cause = 'delayed' if raw['ready_at'] > now else 'ready'
+        yield clockwork.delivery(raw) | {'cause': cause, 'head_id': head}

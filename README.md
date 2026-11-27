@@ -16,7 +16,7 @@ python3 -m quaybell --demo
 
 ## HTTP 接口
 
-以下路径使用 `/v1` 前缀，写入和预查使用 `POST` 与 `application/json`。`{channel}`、`{group}` 和 `{id}` 用返回的标识替换。所有时间是 Unix 秒。
+以下路径使用 `/v1` 前缀，写入和预查使用 `POST` 与 `application/json`。`{channel}`、`{group}` 和 `{id}` 用返回的标识替换。所有对外时间仍是 Unix 秒（浮点），与既有客户端和 `quaybell-trace/1` 证据合同保持一致；存储内部自 v2 起改为 Unix 整数毫秒（见下文“时间基准升级”）。
 
 | 路径 | 方法 | 输入或结果 |
 | --- | --- | --- |
@@ -52,6 +52,16 @@ python3 -m compileall -q quaybell examples
 python3 -m examples.walkthrough claim
 python3 -m examples.walkthrough retention
 python3 -m examples.walkthrough export
+python3 -m examples.upgrade
 ```
 
 每个工作流示例使用临时 SQLite 文件、受控时钟和本机随机端口，运行完即释放。可用 `python3 -m examples.walkthrough --help` 列出所有工作流。正式测试套件延后建设。
+
+## 时间基准升级（v1 秒浮点 → v2 整数毫秒）
+
+内部持久化在 schema v2 中统一为 Unix 整数毫秒，对外合同（HTTP JSON、`quaybell-trace/1` 证据）仍按 Unix 秒浮点解释，由边界层显式换算，客户端无需改动。
+
+- **升级方式**：打开 `user_version=1` 的旧库时自动执行分阶段迁移，无需清空数据库。每一步在独立事务内提交并登记 `migration_ledger`；进程在任意一步后被打断，下次启动会跳过已完成步骤、从断点继续，最后才把 `user_version` 升到 2。
+- **同一毫秒的观察边界**：旧秒值用 `ROUND(x*1000)` 映射到最近毫秒。两条旧数据若落在同一毫秒（亚毫秒差异被收缩），它们的先后仍由原有整数投递/尝试 ID 决定；就绪、租约截止与保留判定继续使用 `<= now` 的封闭区间，因此“恰好在截止时刻”的语义与升级前一致。升级既不拉长也不缩短任何租约或保留窗口超过半个毫秒。
+- **历史可比性**：`quaybell-trace/1` 的格式、字段名和秒级单位不变，摘要仍可独立校验；单个时间戳相对旧值的偏差不超过 0.5 ms，消息状态、派生分发、尝试顺序和 ID 完全保持。已导出的旧证据继续按其文件内的秒值解释，不会被追溯改写。
+- **对账**：迁移在改写前记录每张表的行数及各时间列的求和/极值清单，改写后换算回秒逐项核对（含 `foreign_key_check`），结果写入 ledger 的 `verify` 步骤；`python3 -m examples.upgrade` 用含毫秒内差异的待领时刻、仍有效的旧租约、刚到截止的签收和留存候选，连同中断续跑一起演示全过程。

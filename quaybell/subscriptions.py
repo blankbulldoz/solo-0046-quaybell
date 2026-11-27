@@ -1,11 +1,12 @@
-from . import catalog, inputs, journal
+from . import catalog, clockwork, inputs, journal
 from .codec import pack, unpack
 from .envelope import labels
 from .errors import conflict, missing
 
 
 def decoded(row):
-    return dict(row) | {'tags': unpack(row['tags']), 'paused': bool(row['paused'])}
+    return clockwork.subscription(dict(row) | {'tags': unpack(row['tags']),
+                                               'paused': bool(row['paused'])})
 
 
 def for_channel(db, channel):

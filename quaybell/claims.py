@@ -1,4 +1,4 @@
-from . import attempts, delivery, eligibility, expiry, inputs, journal, policy, publication, subscriptions
+from . import attempts, clockwork, delivery, eligibility, expiry, inputs, journal, policy, publication, subscriptions
 
 
 def claim(db, channel, group, raw, now):
@@ -15,8 +15,10 @@ def claim(db, channel, group, raw, now):
         lease = attempts.open_attempt(db, item, worker, now, rule['lease_seconds'])
         delivery.lease(db, item['id'], lease['number'])
         message = publication.get(db, item['message_id'])
-        journal.append(db, channel, now, 'leased', {'delivery_id': item['id'], 'attempt': lease['number'],
-                                                   'worker': worker, 'expires': lease['expires']}, message['id'])
+        journal.append(db, channel, now, 'leased',
+                       {'delivery_id': item['id'], 'attempt': lease['number'],
+                        'worker': worker, 'expires': lease['expires']}, message['id'])
         results.append(dict(delivery_id=item['id'], message_id=message['id'], lane=item['lane'],
-                            policy=item['policy'], lease=lease, envelope=message['envelope']))
+                            policy=item['policy'], lease=clockwork.lease(lease),
+                            envelope=message['envelope']))
     return {'paused': False, 'items': results}

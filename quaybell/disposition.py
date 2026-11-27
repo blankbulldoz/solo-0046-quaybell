@@ -1,4 +1,4 @@
-from . import attempts, codec, delivery, inputs, outcomes
+from . import attempts, clockwork, codec, delivery, inputs, outcomes
 from .errors import conflict, invalid
 
 
@@ -12,7 +12,8 @@ def settle(db, key, raw, now, disposition):
     item = delivery.get(db, key)
     attempt = attempts.by_token(db, key, token)
     if attempt['outcome'] == disposition and attempt['reason'] == reason:
-        return codec.unpack(attempt['receipt']) | {'repeated': True}
+        return clockwork.outcome(codec.unpack(attempt['receipt'])) | {'repeated': True}
     if attempt['outcome'] != 'open' or item['state'] != 'leased' or attempt['expires'] <= now:
         raise conflict('租约已处置或超时')
-    return outcomes.apply(db, item, attempt, disposition, reason, now) | {'repeated': False}
+    return clockwork.outcome(outcomes.apply(db, item, attempt, disposition, reason, now)) \
+        | {'repeated': False}

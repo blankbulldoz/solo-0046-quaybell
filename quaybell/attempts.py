@@ -1,6 +1,6 @@
 import secrets
 
-from . import codec
+from . import clockwork, codec
 from .errors import conflict
 
 PUBLIC = 'id,delivery_id,number,worker,started,expires,outcome,finished,reason'
@@ -9,10 +9,11 @@ PUBLIC = 'id,delivery_id,number,worker,started,expires,outcome,finished,reason'
 def open_attempt(db, delivery, worker, now, seconds):
     token = secrets.token_urlsafe(24)
     number = delivery['attempt_count'] + 1
+    expires = now + seconds * clockwork.MILLIS_PER_SECOND
     key = db.execute('''INSERT INTO attempts(delivery_id,number,token_digest,worker,started,expires,outcome)
                         VALUES (?,?,?,?,?,?,'open')''',
-                     (delivery['id'], number, codec.fingerprint(token), worker, now, now + seconds)).lastrowid
-    return dict(id=key, token=token, number=number, expires=now + seconds)
+                     (delivery['id'], number, codec.fingerprint(token), worker, now, expires)).lastrowid
+    return dict(id=key, token=token, number=number, expires=expires)
 
 
 def by_token(db, delivery_id, token):
@@ -39,5 +40,5 @@ def finish(db, attempt, outcome, reason, now, receipt):
 
 
 def for_delivery(db, key):
-    return [dict(row) for row in db.execute(
+    return [clockwork.attempt(dict(row)) for row in db.execute(
         f'SELECT {PUBLIC} FROM attempts WHERE delivery_id=? ORDER BY number', (key,))]

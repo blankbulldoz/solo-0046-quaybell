@@ -1,17 +1,16 @@
 import logging
 import sqlite3
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from time import time
 from urllib.parse import urlsplit
 
-from . import api_reads, api_writes, presentation, protocol, routes
+from . import api_reads, api_writes, clockwork, presentation, protocol, routes
 from .errors import RelayError, missing
 
 LOG = logging.getLogger(__name__)
 
 
 class RelayServer(ThreadingHTTPServer):
-    def __init__(self, address, persistence, clock=time):
+    def __init__(self, address, persistence, clock=clockwork.now_ms):
         self.persistence, self.clock = persistence, clock
         super().__init__(address, RelayRequest)
 

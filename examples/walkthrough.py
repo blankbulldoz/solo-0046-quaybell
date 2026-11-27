@@ -25,6 +25,7 @@ def revision(client):
     first, second = client.claim(2)
     assert (old['policy'], new['policy']) == (1, 2)
     assert second['lease']['expires'] - first['lease']['expires'] == 8
+    assert all(isinstance(item['lease']['expires'], float) for item in (first, second))
     return {'active': record['version'], 'old_lease': first['lease']['expires'], 'new_lease': second['lease']['expires']}
 
 

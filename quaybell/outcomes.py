@@ -1,4 +1,4 @@
-from . import attempts, delivery, journal, policy
+from . import attempts, clockwork, delivery, journal, policy
 
 
 def apply(db, item, attempt, disposition, reason, now):
@@ -10,7 +10,8 @@ def apply(db, item, attempt, disposition, reason, now):
             state, when = 'dead', now
         else:
             origin = attempt['expires'] if disposition == 'expired' else now
-            state, when = 'waiting', origin + policy.delay(rule, attempt['number'])
+            backoff_ms = policy.delay(rule, attempt['number']) * clockwork.MILLIS_PER_SECOND
+            state, when = 'waiting', origin + backoff_ms
     result = dict(delivery_id=item['id'], attempt=attempt['number'], outcome=disposition,
                   state=state, effective_at=when, reason=reason)
     delivery.close(db, item['id'], state, when)

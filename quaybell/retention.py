@@ -1,19 +1,20 @@
-from . import catalog, inputs, journal
+from . import catalog, clockwork, inputs, journal
 
 
 def eligible(db, channel, now, limit):
     catalog.get(db, channel)
-    return [dict(row) for row in db.execute('''
-        SELECT m.id,m.published,m.policy,m.published+p.retention_seconds AS cutoff
+    rows = db.execute('''
+        SELECT m.id,m.published,m.policy,m.published+p.retention_seconds*1000 AS cutoff
         FROM messages m JOIN policies p ON p.channel=m.channel AND p.version=m.policy
-        WHERE m.channel=? AND m.published+p.retention_seconds<=?
+        WHERE m.channel=? AND m.published+p.retention_seconds*1000<=?
           AND NOT EXISTS(SELECT 1 FROM deliveries d WHERE d.message_id=m.id
                          AND d.state IN ('waiting','leased'))
-        ORDER BY m.id LIMIT ?''', (channel, now, limit))]
+        ORDER BY m.id LIMIT ?''', (channel, now, limit))
+    return [clockwork.retention_row(dict(row)) for row in rows]
 
 
 def plan(db, channel, now, limit=100):
-    return {'observed_at': now, 'eligible': eligible(db, channel, now, limit)}
+    return {'observed_at': clockwork.to_seconds(now), 'eligible': eligible(db, channel, now, limit)}
 
 
 def prune(db, channel, raw, now):
@@ -23,4 +24,4 @@ def prune(db, channel, raw, now):
     db.executemany('DELETE FROM messages WHERE id=?', [(key,) for key in keys])
     if keys:
         journal.append(db, channel, now, 'pruned', {'message_ids': keys})
-    return {'removed': keys, 'observed_at': now}
+    return {'removed': keys, 'observed_at': clockwork.to_seconds(now)}

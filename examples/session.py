@@ -34,7 +34,7 @@ class Session:
             return body
 
     def tick(self, amount):
-        self.clock[0] += amount
+        self.clock[0] += amount * 1000
 
     def channel(self, policy=None):
         return self.request('/channels', {'name': 'wire-gate', 'policy': policy or POLICY}, 201)
@@ -63,7 +63,8 @@ def envelope(key='signal-1', lane='coil-north', **extra):
 @contextmanager
 def session():
     with TemporaryDirectory(prefix='quaybell-') as directory:
-        clock = [1_730_000_000.0]
+        # 受控时钟按内部整数毫秒推进；对外接口仍换算回 Unix 秒。
+        clock = [1_730_000_000_000]
         persistence = RelayPersistence(Path(directory) / 'relay.sqlite3')
         with RelayServer(('127.0.0.1', 0), persistence, lambda: clock[0]) as server:
             thread = Thread(target=server.serve_forever, kwargs={'poll_interval': .02})
